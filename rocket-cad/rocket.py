@@ -1,71 +1,96 @@
 #!/usr/bin/env python3
 """
-Retro EDF hover rocket - preliminary parametric CAD (CadQuery).
+Checker rocket, rev B - parametric CAD for a 3D-printed model rocket (CadQuery).
+
+Rev B drops the ducted fan. The body is closed (no inlets), slender, and carries a
+standard hobby rocket motor in the tail. Recovery is by parachute from the nose joint.
 
 Coordinates: Z up, Z=0 is the ground under the feet. All dimensions in mm.
-Run:  python rocket.py            -> writes ./out/{stl,step,viewer}
-Everything that depends on a purchased part is a parameter at the top.
-MEASURE YOUR FAN before printing the aft body: EDF_OD / EDF_LEN drive the bore.
+
+    python rocket.py                                   # reference proportions
+    python rocket.py --params '{"H":700,"D":65}'       # paste from the viewer's "Copy dimensions"
+
+The same shape numbers (SHAPE, LEG below) drive the interactive viewer, so what you
+tune on the page is what this script builds.
 """
-import base64
+import argparse
 import json
 import math
 import os
-import struct
 
 import cadquery as cq
 import numpy as np
 from scipy.interpolate import PchipInterpolator
 
 # ------------------------------------------------------------------ parameters
-EDF_OD = 98.0        # fan housing outer diameter (90 mm class)  << measure
-EDF_ID = 90.0        # fan duct inner diameter
-EDF_LEN = 80.0       # housing length seated in the bore          << measure
-EDF_HUB = 38.0       # hub / motor diameter (for swept-area maths only)
-FIT = 0.2            # radial clearance on sliding fits
-WALL_AFT = 1.6       # aft body skin (4 perimeters @ 0.4)
-WALL = 1.2           # mid body + nose skin (3 perimeters @ 0.4)
+P = dict(
+    H=600.0,       # overall height, ground to nose tip
+    D=56.0,        # maximum body diameter
+    STANCE=224.0,  # foot circle diameter
+    ROWS=4,        # checker rows
+    COLS=4,        # checker columns
+    MOTOR=29,      # motor mount size: 24 or 29
+)
 
-Z_EXIT = 100.0       # nozzle exit plane above ground (~1 fan diameter)
-Z_SEAT = 197.0       # bottom face of the fan housing
-Z_J1 = Z_SEAT + EDF_LEN + 10.0   # aft / mid joint (spigot clamps the fan)
-Z_BULK = 370.0       # battery bulkhead (top of inlet plenum)
-Z_J2 = 465.0         # mid / nose joint
-Z_TIP = 600.0        # nose tip  -> overall height
+# Motor mount tube (cardboard liner) outer diameter, typical motor length and loaded mass.
+MOTORS = {
+    24: dict(tube_od=25.0, length=95.0, mass=65.0),
+    29: dict(tube_od=30.7, length=124.0, mass=125.0),
+}
 
-VANE_Z = 126.0       # vane pivot axis height
-VANE_AZ = [45, 135, 225, 315]
+# Outer mould line, normalised: (z / H, r / (D/2)). Traced from the reference silhouette.
+SHAPE = dict(
+    profile=[(0.195, 0.60), (0.28, 0.67), (0.383, 0.79), (0.469, 0.885), (0.5625, 0.965),
+             (0.64, 1.0), (0.723, 0.965), (0.797, 0.87), (0.8875, 0.70), (0.94, 0.42),
+             (0.975, 0.19), (1.0, 0.0)],
+    t_tail=0.195,     # body tail (motor exit)
+    t_j1=0.40,        # aft / mid joint (glued)
+    t_chk0=0.5625,    # checker band bottom
+    t_chk1=0.8875,    # checker band top
+)
+# Leg geometry as fractions of H (heights) and D (pod).
+LEG = dict(
+    t_root_top=0.36, t_root_bot=0.203, t_pod_tip=0.125, t_pod_max=0.058, t_pod_bot=0.012,
+    pod_r=0.185, thick=0.15, thick_min=6.0,
+    outer_ctrl=(0.50, 0.42),   # control point: fraction along x, fraction down in z
+    inner_ctrl=(0.72, 0.045),  # control point: fraction along x, drop below root bottom / (root-pod) height
+)
+
+WALL_AFT, WALL, FIT, CPL = 1.2, 1.0, 0.15, 12.0
 LEG_AZ = [0, 120, 240]
-TUNNEL_AZ = 180      # wire tunnel azimuth
-WIN_AZ = [30 + 60 * k for k in range(6)]   # inlet windows (pillars under legs)
+LUG_AZ = 60
+LUG_ID, LUG_OD, LUG_LEN = 6.7, 9.4, 25.0     # for a 1/4 in (6.35 mm) launch rod
 
-LEG_T = 14.0         # leg plate thickness
-R_FOOT = 175.0       # foot circle radius
-SPIGOT = 10.0        # joint overlap length
 
-CHK_Z0, CHK_ROW, CHK_ROWS, CHK_COLS = 365.0, 50.0, 3, 6   # checker band
-
-R_FAN = EDF_OD / 2 + FIT + WALL_AFT     # outer skin radius over the fan
-LEG_BOLTS = [(R_FAN + 6.5, 180.0), (R_FAN + 6.5, 212.0)]   # (radius, z) of the M3 clevis bolts
-
-# Outer mould line: (z, radius). PCHIP keeps the fan zone exactly cylindrical.
-PROFILE = [
-    (Z_EXIT, 44.5), (140, 45.5), (175, 46.8), (190, 49.0),
-    (Z_SEAT, R_FAN), (Z_J1, R_FAN),
-    (330, 54.6), (372, 56.0), (410, 55.4), (Z_J2, 49.5),
-    (500, 45.0), (530, 38.5), (560, 26.0), (585, 11.0), (Z_TIP, 0.0),
-]
-_p = PchipInterpolator([p[0] for p in PROFILE], [p[1] for p in PROFILE])
+def derive():
+    """Fill module-level dimensions from P."""
+    g = globals()
+    H, D = P["H"], P["D"]
+    g["H"], g["R"] = H, D / 2
+    g["_p"] = PchipInterpolator([t for t, _ in SHAPE["profile"]], [r for _, r in SHAPE["profile"]])
+    g["Z_TAIL"] = SHAPE["t_tail"] * H
+    g["Z_J1"] = SHAPE["t_j1"] * H
+    g["Z_CHK0"], g["Z_CHK1"] = SHAPE["t_chk0"] * H, SHAPE["t_chk1"] * H
+    g["ROW_H"] = (Z_CHK1 - Z_CHK0) / P["ROWS"]
+    g["Z_J2"] = Z_CHK0 + (P["ROWS"] // 2) * ROW_H        # nose joint on a row boundary
+    g["RB"] = MOTORS[P["MOTOR"]]["tube_od"] / 2 + FIT     # motor tube bore radius
+    g["R_FOOT"] = P["STANCE"] / 2
+    g["LEG_T"] = max(LEG["thick_min"], LEG["thick"] * D)
+    g["POD_R"] = LEG["pod_r"] * D
+    g["LUG_X"] = R + 5.0
+    if ro(Z_TAIL) < RB + 0.8:
+        raise SystemExit("Tail is too narrow for a %d mm motor tube: need D >= %.0f mm"
+                         % (P["MOTOR"], 2 * (RB + 0.8) / SHAPE["profile"][0][1]))
 
 
 def ro(z):
     """Outer skin radius at height z."""
-    return float(_p(z))
+    return float(R * _p(min(max(z / H, SHAPE["t_tail"]), 1.0)))
 
 
 # ------------------------------------------------------------------ helpers
-def _zs(z0, z1, step=5.0):
-    n = max(int(abs(z1 - z0) / step), 2) + 1
+def _zs(z0, z1, step=4.0):
+    n = max(int(abs(z1 - z0) / step), 3) + 1
     return np.linspace(z0, z1, n)
 
 
@@ -80,18 +105,21 @@ def solid_under(fn, z0, z1):
 
 
 def ring(poly):
-    """Revolve a closed (r, z) polygon about the Z axis."""
     return cq.Workplane("XZ").polyline(poly).close().revolve(360, (0, 0, 0), (0, 1, 0))
 
 
+def band(fn_out, thick, z0, z1):
+    """Revolved band between r=fn_out(z) and r=fn_out(z)-thick."""
+    zs = _zs(z0, z1, 2.0)
+    pts = [(fn_out(z), z) for z in zs] + [(fn_out(z) - thick, z) for z in zs[::-1]]
+    return ring(pts)
+
+
 def shell(z0, z1, wall):
-    outer = solid_under(ro, z0, z1)
-    inner = solid_under(lambda z: ro(z) - wall, z0 - 1, z1 + 1)
-    return outer.cut(inner)
+    return solid_under(ro, z0, z1).cut(solid_under(lambda z: ro(z) - wall, z0 - 1, z1 + 1))
 
 
 def plate(poly, half):
-    """Extrude an (x, z) polygon symmetrically +-half in Y."""
     return cq.Workplane("XZ").polyline(poly).close().extrude(half, both=True)
 
 
@@ -99,276 +127,180 @@ def rotz(obj, deg):
     return obj.rotate((0, 0, 0), (0, 0, 1), deg)
 
 
-def radial_cyl(z, r0, r1, dia):
-    """Cylinder with its axis along +X at height z, from x=r0 to x=r1."""
-    return (cq.Workplane("YZ").workplane(offset=r0).center(0, z)
-            .circle(dia / 2).extrude(r1 - r0))
+def vcyl(x, y, z0, z1, r):
+    return cq.Workplane("XY").workplane(offset=z0).center(x, y).circle(r).extrude(z1 - z0)
 
 
-def y_hole(x, z, dia, half=30):
-    return cq.Workplane("XZ").center(x, z).circle(dia / 2).extrude(half, both=True)
-
-
-# ------------------------------------------------------------------ aft body
-def make_aft():
-    body = shell(Z_EXIT, Z_J1, WALL_AFT)
-    bore = R_FAN - WALL_AFT
-
-    # fan seat: ledge at the fan duct ID, 45 deg underside (prints unsupported)
-    body = body.union(ring([
-        (bore + 0.6, Z_SEAT), (EDF_ID / 2, Z_SEAT), (EDF_ID / 2, Z_SEAT - 1.5),
-        (bore + 0.6, Z_SEAT - 1.5 - (bore + 0.6 - EDF_ID / 2)),
-    ]))
-
-    core = solid_under(lambda z: ro(z) - 0.8, Z_EXIT - 5, Z_J1 + 5)
-    cavity = solid_under(lambda z: ro(z) - WALL_AFT, Z_EXIT - 5, Z_J1 + 5)
-
-    # leg clevises: two cheeks per leg, 45 deg lead-in underneath
-    ck = [(40, 150), (R_FAN + 12, 150 + R_FAN + 12 - 40), (R_FAN + 12, 214),
-          (R_FAN - 1, 248), (40, 248)]      # top edge fairs into the leg's upper edge
-    cheeks = plate(ck, LEG_T / 2 + FIT + 3).cut(plate(ck, LEG_T / 2 + FIT)).cut(core)
-    bolts = y_hole(*LEG_BOLTS[0], 3.2).union(y_hole(*LEG_BOLTS[1], 3.2))
-    cheeks = cheeks.cut(bolts)
-    for az in LEG_AZ:
-        body = body.union(rotz(cheeks, az))
-
-    # wire tunnel: motor phases + servo leads run past the fan outside the bore
-    to = [(40, 146), (R_FAN + 7, 146 + R_FAN + 7 - 40), (R_FAN + 7, Z_J1), (40, Z_J1)]
-    ti = [(40, 148), (R_FAN + 5.4, 148 + R_FAN + 5.4 - 40),
-          (R_FAN + 5.4, Z_J1 - 1.2), (40, Z_J1 - 1.2)]
-    channel = plate(ti, 7.5)
-    tunnel = plate(to, 9.0).cut(channel).cut(core)
-    body = body.union(rotz(tunnel, TUNNEL_AZ))
-    # slot through the skin so wires can enter/leave the bore under and over the fan
-    slot = plate([(40, Z_SEAT - 14), (R_FAN + 2, Z_SEAT - 14),
-                  (R_FAN + 2, Z_J1 - 1.2), (40, Z_J1 - 1.2)], 7.5)
-    body = body.cut(rotz(slot, TUNNEL_AZ))
-    # open the bottom of the tunnel for the servo leads
-    entry = plate([(ro(160) + 1.0, 150), (R_FAN + 5.4, 150), (R_FAN + 5.4, 176),
-                   (ro(160) + 1.0, 176)], 6.0)
-    body = body.cut(rotz(entry.translate((0, 0, -8)), TUNNEL_AZ))
-
-    # vane pivot bosses
-    rv = ro(VANE_Z)
-    boss = radial_cyl(VANE_Z, 20, rv + 4.5, 11.0).cut(cavity)
-    hole = radial_cyl(VANE_Z, 20, rv + 10, 6.4)
-    for az in VANE_AZ:
-        body = body.union(rotz(boss, az)).cut(rotz(hole, az))
-
-    # 45 deg conical joint face (self-centring, no overhang on the mating part)
-    body = body.cut(ring([(46, Z_J1 - 4.95), (54, Z_J1 + 3.05), (54, Z_J1 + 6),
-                          (46, Z_J1 + 6)]))
-    # joint screws
-    for az in (30, 150, 270):
-        body = body.cut(rotz(radial_cyl(Z_J1 - SPIGOT / 2, 40, 60, 2.6), az))
-    return body
-
-
-# ------------------------------------------------------------------ mid body
-def make_mid():
-    body = shell(Z_J1, Z_J2, WALL)
-    bore = R_FAN - WALL_AFT
-    so = bore - FIT            # spigot outer radius
-    si = so - 2.0
-    # spigot into the aft bore; its lower face clamps the fan housing
-    body = body.union(ring([
-        (si, Z_J1 - SPIGOT), (so, Z_J1 - SPIGOT), (so, Z_J1 - (R_FAN - so)),
-        (R_FAN, Z_J1), (R_FAN - 0.8, Z_J1 + 1.0), (R_FAN - 0.8, Z_J1 + 6.0),
-        (si, Z_J1 + 6.0 - (R_FAN - 0.8 - si)),
-    ]))
-    # notch in the spigot over the wire tunnel
-    body = body.cut(rotz(plate([(40, Z_J1 - SPIGOT - 1), (so + 0.5, Z_J1 - SPIGOT - 1),
-                                (so + 0.5, Z_J1 - 1.9), (40, Z_J1 - 1.9)], 7.5),
-                         TUNNEL_AZ))
-
-    # stiffening ribs behind the window pillars
-    for az in range(0, 360, 60):
-        rib = (cq.Workplane("XY").workplane(offset=Z_J1 + 6)
-               .center(ro(Z_J1) - WALL - 1.6, 0).rect(4.4, 2.4).extrude(Z_BULK - 12 - Z_J1 - 6))
-        body = body.union(rotz(rib, az))
-
-    # bulkhead ledge, 45 deg underside
-    rw = ro(Z_BULK) - WALL
-    r_led = ro(Z_J2) - WALL - 3.3
-    body = body.union(ring([
-        (rw + 0.6, Z_BULK), (r_led, Z_BULK), (r_led, Z_BULK - 1.5),
-        (rw + 0.6, Z_BULK - 1.5 - (rw + 0.6 - r_led)),
-    ]))
-
-    # inlet windows: hexagonal so they print without support either way up
-    hw = 18.5
-    win = (cq.Workplane("YZ").polyline([(0, 298), (hw, 310), (hw, 346), (0, 358),
-                                        (-hw, 346), (-hw, 310)]).close().extrude(75))
-    for az in WIN_AZ:
-        body = body.cut(rotz(win, az))
-
-    # top joint: conical face + screw holes
-    rt = ro(Z_J2)
-    body = body.cut(ring([(rt - 4.8, Z_J2 - 4.95), (rt + 3.2, Z_J2 + 3.05),
-                          (rt + 3.2, Z_J2 + 6), (rt - 4.8, Z_J2 + 6)]))
-    for az in (30, 150, 270):
-        body = body.cut(rotz(radial_cyl(Z_J1 - SPIGOT / 2, 40, 60, 2.6), az))
-        body = body.cut(rotz(radial_cyl(Z_J2 - SPIGOT / 2, 40, 60, 2.6), az))
-    return body
-
-
-# ------------------------------------------------------------------ nose
-def make_nose():
-    outer = solid_under(ro, Z_J2, Z_TIP)
-    zc = Z_J2
-    while ro(zc) - WALL > 3.0:
-        zc += 0.5
-    inner = solid_under(lambda z: ro(z) - WALL, Z_J2 - 1, zc)
-    body = outer.cut(inner)
-    rt = ro(Z_J2)
-    so = rt - WALL - FIT
-    si = so - 1.6
-    body = body.union(ring([
-        (si, Z_J2 - SPIGOT), (so, Z_J2 - SPIGOT), (so, Z_J2 - (rt - so)),
-        (rt, Z_J2), (rt - 0.6, Z_J2 + 1.0), (rt - 1.0, Z_J2 + 5.0),
-        (si, Z_J2 + 5.0 - (rt - 1.0 - si)),
-    ]))
-    for az in (30, 150, 270):
-        body = body.cut(rotz(radial_cyl(Z_J2 - SPIGOT / 2, 30, 60, 2.6), az))
-    return body
-
-
-# ------------------------------------------------------------------ bulkhead
-def make_bulkhead():
-    r = ro(Z_J2) - WALL - 0.7          # must pass through the mid body top opening
-    d = cq.Workplane("XY").workplane(offset=Z_BULK).circle(r).extrude(3.0)
-    # battery strap slots, cable pass-through, corner locators for a 50x50 pack
-    for x in (-27.5, 27.5):
-        d = d.cut(cq.Workplane("XY").workplane(offset=Z_BULK - 1).center(x, 0)
-                  .rect(4, 24).extrude(6))
-    d = d.cut(cq.Workplane("XY").workplane(offset=Z_BULK - 1).center(0, 35)
-              .rect(24, 11).extrude(6))
-    for x in (-28, 28):
-        for y in (-28, 28):
-            if y > 0:
-                continue        # keep the cable side clear
-            d = d.union(cq.Workplane("XY").workplane(offset=Z_BULK + 3).center(x, y)
-                        .rect(5, 5).extrude(10))
-    return d
+def qbez(p0, p1, p2, n=20):
+    t = np.linspace(0, 1, n + 1)[:, None]
+    return ((1 - t) ** 2 * np.array(p0) + 2 * (1 - t) * t * np.array(p1) + t ** 2 * np.array(p2)).tolist()
 
 
 # ------------------------------------------------------------------ legs
-def make_leg():
-    outer = [(44, 240), (80, 222), (120, 188), (152, 146), (R_FOOT, 104)]
-    inner = [(160, 40), (156, 62), (138, 96), (112, 126), (84, 144), (60, 150), (44, 150)]
-    wp = cq.Workplane("XZ").moveTo(*outer[0]).spline(outer[1:], includeCurrent=True)
-    wp = wp.lineTo(R_FOOT + 3, 40).lineTo(*inner[0])
-    wp = wp.spline(inner[1:], includeCurrent=True).close()
-    leg = wp.extrude(LEG_T / 2, both=True)
-    try:
-        leg = leg.faces(">Y or <Y").edges().fillet(5.0)
-    except Exception as e:   # keep going with square edges if OCC refuses
-        print("  leg fillet failed, using chamfer:", str(e)[:60])
-        leg = leg.faces(">Y or <Y").edges().chamfer(3.0)
+def leg_points():
+    """Control geometry of one leg in the (x, z) plane. Mirrored in the viewer JS."""
+    z_rt, z_rb = LEG["t_root_top"] * H, LEG["t_root_bot"] * H
+    z_pt, z_pm, z_pb = LEG["t_pod_tip"] * H, LEG["t_pod_max"] * H, LEG["t_pod_bot"] * H
+    p0, p2 = (ro(z_rt) - 1.0, z_rt), (R_FOOT, z_pt)
+    p1 = (p0[0] + LEG["outer_ctrl"][0] * (p2[0] - p0[0]), p0[1] + LEG["outer_ctrl"][1] * (p2[1] - p0[1]))
+    q0, q2 = (R_FOOT - 0.75 * POD_R, z_pm), (ro(z_rb) - 1.0, z_rb)
+    q1 = (q2[0] + LEG["inner_ctrl"][0] * (q0[0] - q2[0]), z_rb - LEG["inner_ctrl"][1] * (z_rb - z_pm))
+    pod = [(0.5 * POD_R, z_pb), (0.86 * POD_R, z_pb + 0.35 * (z_pm - z_pb)), (POD_R, z_pm),
+           (0.82 * POD_R, z_pm + 0.33 * (z_pt - z_pm)), (0.42 * POD_R, z_pm + 0.70 * (z_pt - z_pm)),
+           (0.0, z_pt)]
+    return dict(outer=(p0, p1, p2), inner=(q0, q1, q2), pod=pod, z_pm=z_pm, z_pb=z_pb)
 
-    pod_pts = [(9.5, 12), (16, 38), (13.5, 68), (6.5, 92), (0, 106)]
-    pod = (cq.Workplane("XZ").moveTo(0, 10).lineTo(6, 10)
-           .spline(pod_pts, includeCurrent=True).close()
+
+def make_leg():
+    g = leg_points()
+    outer, inner = qbez(*g["outer"]), qbez(*g["inner"])
+    wp = cq.Workplane("XZ").moveTo(*outer[0]).spline([tuple(p) for p in outer[1:]], includeCurrent=True)
+    wp = wp.lineTo(R_FOOT + 0.3 * POD_R, g["z_pm"]).lineTo(*inner[0])
+    wp = wp.spline([tuple(p) for p in inner[1:]], includeCurrent=True).close()
+    leg = wp.extrude(LEG_T / 2, both=True)
+    for f in (0.38, 0.3, 0.2):
+        try:
+            leg = leg.faces(">Y or <Y").edges().fillet(f * LEG_T)
+            break
+        except Exception:
+            continue
+    pod = (cq.Workplane("XZ").moveTo(0, g["z_pb"]).lineTo(*g["pod"][0])
+           .spline(g["pod"][1:], includeCurrent=True).close()
            .revolve(360, (0, 0, 0), (0, 1, 0)).translate((R_FOOT, 0, 0)))
     leg = leg.union(pod)
-    # socket for the TPU foot
-    leg = leg.cut(cq.Workplane("XY").workplane(offset=9).center(R_FOOT, 0)
-                  .circle(3.1).extrude(13))
-    # trim root to the body skin, drill clevis bolts
-    leg = leg.cut(solid_under(lambda z: ro(z) + 0.3, Z_EXIT - 5, Z_J1 + 5))
-    leg = leg.cut(y_hole(*LEG_BOLTS[0], 3.2)).cut(y_hole(*LEG_BOLTS[1], 3.2))
+    leg = leg.cut(vcyl(R_FOOT, 0, g["z_pb"] - 1, g["z_pb"] + 9, 2.1))   # foot pad socket
     return leg
 
 
 def make_foot():
-    f = cq.Workplane("XY").circle(9).extrude(10).faces("<Z").edges().fillet(3)
-    f = f.union(cq.Workplane("XY").workplane(offset=10).circle(2.9).extrude(11))
+    zb = LEG["t_pod_bot"] * H
+    f = cq.Workplane("XY").circle(0.5 * POD_R).extrude(zb)
+    f = f.union(vcyl(0, 0, zb, zb + 8, 1.95))
     return f.translate((R_FOOT, 0, 0))
 
 
-# ------------------------------------------------------------------ vanes
-def make_vane():
-    r_tip = ro(VANE_Z) - WALL_AFT - 2.2
-    v = plate([(6, VANE_Z - 25), (r_tip, VANE_Z - 25), (r_tip, VANE_Z + 11),
-               (6, VANE_Z + 11)], 1.5)
-    try:
-        v = v.edges("|X").chamfer(1.1, 4.0)
-    except Exception:
-        pass
-    v = v.union(radial_cyl(VANE_Z, 4, ro(VANE_Z) + 13, 6.0))
-    return v
+# ------------------------------------------------------------------ launch lug
+def make_lug(z0):
+    """Launch lug on a web, 45 deg at both ends so it prints either way up."""
+    xi = min(ro(z0), ro(z0 + 80)) - 0.6
+    w = LUG_X + LUG_OD / 2 - xi
+    z1 = z0 + LUG_LEN + 2 * w
+    tube = vcyl(LUG_X, 0, z0 - 2, z1 + 2, LUG_OD / 2)
+    web = cq.Workplane("XY").workplane(offset=z0 - 2).center((xi + LUG_X - 3) / 2, 0) \
+        .rect(LUG_X - 3 - xi, 3.0).extrude(z1 - z0 + 4)
+    x1 = LUG_X + LUG_OD / 2 + 1
+    diamond = plate([(xi - 1, z0 - 1), (x1, z0 + (x1 - xi)), (x1, z1 - (x1 - xi)), (xi - 1, z1 + 1)], 8)
+    lug = tube.union(web).intersect(diamond)
+    lug = lug.cut(vcyl(LUG_X, 0, z0 - 5, z1 + 5, LUG_ID / 2))
+    lug = lug.cut(solid_under(lambda z: ro(z) - 0.4, max(z0 - 10, Z_TAIL), min(z1 + 10, H - 5)))
+    return rotz(lug, LUG_AZ), (z0, z1)
+
+
+# ------------------------------------------------------------------ aft body with legs
+def make_aft():
+    skin = shell(Z_TAIL, Z_J1, WALL_AFT)
+    zc = Z_J1 - CPL - 4                       # where the motor cone meets the skin
+    rs = ro(zc) - WALL_AFT
+    r_led = RB - 2.5
+
+    def cone_low(r):
+        return zc - 2.0 - (rs + 0.5 - r)
+
+    # 45 deg cone: centres the motor tube, stops it, and takes the thrust into the skin
+    cone = ring([(rs + 0.5, zc), (r_led, zc - (rs + 0.5 - r_led)), (r_led, cone_low(r_led)),
+                 (rs + 0.5, zc - 2.0)])
+    z_st = cone_low(RB) + 0.6
+    sleeve = ring([(RB - 0.3, Z_TAIL), (RB + 1.2, Z_TAIL), (RB + 1.2, z_st), (RB - 0.3, z_st)])
+    body = skin.union(sleeve).union(cone)
+
+    inside = solid_under(lambda z: ro(z) - 0.6, Z_TAIL, Z_J1)
+    web = (cq.Workplane("XY").workplane(offset=Z_TAIL).center(RB + 0.6 + 40, 0)
+           .rect(80, 4.0).extrude(z_st - Z_TAIL).intersect(inside))
+    leg = make_leg()
+    for az in LEG_AZ:
+        body = body.union(rotz(web, az)).union(rotz(leg, az))
+
+    lug, lug_z = make_lug(Z_TAIL + 6)
+    body = body.union(lug)
+
+    # motor tube bore with a conical stop
+    L = cone_low(RB)
+    body = body.cut(ring([(0, Z_TAIL - 1), (RB, Z_TAIL - 1), (RB, L), (r_led, L - 2.5), (0, L - 2.5)]))
+    # shock cord: two holes through the cone
+    rh = (RB + 1.2 + rs) / 2
+    for az in (165, 195):
+        a = math.radians(az)
+        body = body.cut(vcyl(rh * math.cos(a), rh * math.sin(a), zc - 14, zc + 3, 1.3))
+    return body, leg, dict(sleeve_len=z_st - Z_TAIL, cone_z=zc, lug_z=lug_z)
+
+
+def make_mid():
+    body = shell(Z_J1, Z_J2, WALL)
+    z0 = (Z_J1 + Z_J2) / 2 - 25
+    lug, lug_z = make_lug(z0)
+    return body.union(lug), dict(lug_z=lug_z)
+
+
+def make_nose():
+    outer = solid_under(ro, Z_J2, H)
+    zc = Z_J2
+    while ro(zc) - WALL > 3.0:
+        zc += 0.5
+    return outer.cut(solid_under(lambda z: ro(z) - WALL, Z_J2 - 1, zc))
+
+
+def make_coupler(zj, wall, down, up, crossbar=False):
+    """Joint ring. Each half follows the bore if the bore narrows away from the joint,
+    and is a plain cylinder if the bore widens, so it can always be inserted."""
+    eps = 2.0
+    grows = ro(zj + eps) > ro(zj - eps)      # body getting wider going up
+    r_j = ro(zj) - wall - FIT
+
+    def r_out(z):
+        conform = (z < zj and grows) or (z > zj and not grows)
+        return ro(z) - wall - FIT if conform else r_j
+
+    c = band(r_out, 1.2, zj - down, zj + up)
+    if crossbar:   # shock cord anchor across the bottom of the nose shoulder
+        bar = (cq.Workplane("XY").workplane(offset=zj - down).rect(2 * r_j, 4.0).extrude(3.0)
+               .intersect(vcyl(0, 0, zj - down - 1, zj - down + 4, r_out(zj - down) - 0.6)))
+        c = c.union(bar)
+    return c
 
 
 # ------------------------------------------------------------------ checker split
 def split_checker(part, zlo, zhi):
-    """Return (red, white) bodies; white = checker cells inside [zlo, zhi]."""
     white = None
-    step = 360.0 / CHK_COLS
-    for j in range(CHK_ROWS):
-        z0, z1 = CHK_Z0 + j * CHK_ROW, CHK_Z0 + (j + 1) * CHK_ROW
-        z0, z1 = max(z0, zlo), min(z1, zhi)
+    step = 360.0 / P["COLS"]
+    for j in range(P["ROWS"]):
+        z0, z1 = max(Z_CHK0 + j * ROW_H, zlo), min(Z_CHK0 + (j + 1) * ROW_H, zhi)
         if z1 - z0 < 1:
             continue
-        cell = (cq.Workplane("XZ").polyline([(30, z0), (80, z0), (80, z1), (30, z1)])
+        cell = (cq.Workplane("XZ").polyline([(2, z0), (R + 20, z0), (R + 20, z1), (2, z1)])
                 .close().revolve(step, (0, 0, 0), (0, 1, 0)))
-        for i in range(CHK_COLS):
+        for i in range(P["COLS"]):
             if (i + j) % 2:
                 continue
             c = rotz(cell, i * step)
             white = c if white is None else white.union(c)
-    w = part.intersect(white)
-    r = part.cut(white)
-    return r, w
+    if white is None:
+        return part, None
+    return part.cut(white), part.intersect(white)
 
 
-# ------------------------------------------------------------------ ghosts (bought parts)
-def ghosts():
-    g = {}
-    edf = (cq.Workplane("XY").workplane(offset=Z_SEAT).circle(EDF_OD / 2)
-           .circle(EDF_ID / 2).extrude(EDF_LEN))
-    hub = cq.Workplane("XY").workplane(offset=Z_SEAT - 30).circle(EDF_HUB / 2).extrude(EDF_LEN + 30)
-    spin = (cq.Workplane("XZ").polyline([(0, Z_SEAT + EDF_LEN), (EDF_HUB / 2, Z_SEAT + EDF_LEN),
-                                         (0, Z_SEAT + EDF_LEN + 22)]).close()
-            .revolve(360, (0, 0, 0), (0, 1, 0)))
-    g["EDF 90 mm"] = edf.union(hub).union(spin)
-    g["Battery 6S 5000"] = (cq.Workplane("XY").workplane(offset=Z_BULK + 3)
-                            .rect(50, 50).extrude(155))
-    g["ESC"] = (cq.Workplane("XY").workplane(offset=Z_BULK - 26)
-                .rect(84, 38).extrude(12))
-    g["Flight controller"] = (cq.Workplane("XY").workplane(offset=Z_BULK + 3 + 158)
-                              .rect(36, 36).extrude(8))
-    g["GPS"] = (cq.Workplane("XY").workplane(offset=Z_BULK + 3 + 172)
-                .rect(25, 25).extrude(8))
-    servo = (cq.Workplane("YZ").workplane(offset=ro(VANE_Z) + 6)
-             .center(0, VANE_Z + 5.25).rect(12.5, 23).extrude(27))
-    s = None
-    for az in VANE_AZ:
-        r = rotz(servo, az)
-        s = r if s is None else s.union(r)
-    g["Vane servos x4"] = s
-    return g
+# ------------------------------------------------------------------ build + export
+RED, WHITE, DARK, GREY = (0.84, 0.13, 0.09), (0.97, 0.96, 0.93), (0.13, 0.13, 0.14), (0.62, 0.62, 0.64)
 
 
-# ------------------------------------------------------------------ build
-def build():
-    print("building aft body");   aft = make_aft()
-    print("building mid body");   mid = make_mid()
-    print("building nose");       nose = make_nose()
-    print("building bulkhead");   bulk = make_bulkhead()
-    print("building leg");        leg = make_leg()
-    foot = make_foot()
-    vane = make_vane()
-    print("splitting checker")
-    mid_r, mid_w = split_checker(mid, Z_J1 - SPIGOT - 1, Z_J2)
-    nose_r, nose_w = split_checker(nose, Z_J2, Z_TIP)
-    return dict(aft=aft, mid=mid, nose=nose, bulk=bulk, leg=leg, foot=foot, vane=vane,
-                mid_r=mid_r, mid_w=mid_w, nose_r=nose_r, nose_w=nose_w)
+def vol(wp):
+    return sum(s.Volume() for s in wp.vals()) / 1000.0     # cm3
 
 
-RED, WHITE, DARK, GREY = (0.82, 0.10, 0.08), (0.96, 0.95, 0.92), (0.16, 0.16, 0.18), (0.6, 0.6, 0.62)
+def area(wp):
+    return sum(s.Area() for s in wp.vals()) / 100.0        # cm2
 
 
-def mesh_of(wp, tol=0.25, ang=0.35):
+def mesh_of(wp, tol=0.2, ang=0.3):
     verts, tris = [], []
     for s in wp.vals():
         v, t = s.tessellate(tol, ang)
@@ -379,119 +311,121 @@ def mesh_of(wp, tol=0.25, ang=0.35):
 
 
 def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--params", help="JSON object overriding H, D, STANCE, ROWS, COLS, MOTOR")
+    ap.add_argument("--out", default=None)
+    a = ap.parse_args()
+    if a.params:
+        P.update(json.loads(a.params))
+    derive()
     here = os.path.dirname(os.path.abspath(__file__))
-    out = os.path.join(here, "out")
+    out = a.out or os.path.join(here, "out")
     for d in ("stl", "step", "viewer"):
         os.makedirs(os.path.join(out, d), exist_ok=True)
-    P = build()
+        for f in os.listdir(os.path.join(out, d)):
+            os.remove(os.path.join(out, d, f))
 
-    def vol(k):
-        return sum(s.Volume() for s in P[k].vals()) / 1000.0   # cm3
-
-    def area(k):
-        return sum(s.Area() for s in P[k].vals()) / 100.0      # cm2
+    print("building aft body + legs"); aft, leg, info = make_aft()
+    print("building mid body");        mid, minfo = make_mid()
+    print("building nose");            nose = make_nose()
+    cpl1 = make_coupler(Z_J1, WALL_AFT, CPL, CPL)
+    cpl2 = make_coupler(Z_J2, WALL, 18.0, CPL, crossbar=True)
+    foot = make_foot()
+    print("splitting checker")
+    mid_r, mid_w = split_checker(mid, Z_J1, Z_J2)
+    nose_r, nose_w = split_checker(nose, Z_J2, H)
 
     PLA = 1.24
-    # thin shells print solid; legs print as 2 perimeters + sparse infill
-    leg_g = (area("leg") * 0.09 + vol("leg") * 0.08) * PLA
+    # skins print solid; legs print as 2 perimeters + ~10 % infill
+    leg_g = (area(leg) * 0.09 + vol(leg) * 0.10) * PLA
+    aft_g = (vol(aft) - 3 * vol(leg)) * PLA + 3 * leg_g
     rows = [
-        ("Aft body (fan mount, nozzle, leg clevises)", 1, vol("aft") * PLA, "aft_body.stl"),
-        ("Mid body (inlets, battery bay)", 1, vol("mid") * PLA, "mid_body.stl"),
-        ("Nose cone", 1, vol("nose") * PLA, "nose_cone.stl"),
-        ("Battery bulkhead", 1, vol("bulk") * PLA, "bulkhead.stl"),
-        ("Leg (print as two halves)", 3, leg_g, "leg_half_a.stl + leg_half_b.stl"),
-        ("Thrust vane", 4, vol("vane") * PLA, "vane.stl"),
-        ("Foot pad (TPU)", 3, vol("foot") * 1.21, "foot_pad.stl"),
+        dict(key="aft", name="Tail with legs and motor mount", qty=1, g=aft_g, tall=Z_J1 - LEG["t_pod_bot"] * H,
+             file="tail_with_legs.stl"),
+        dict(key="mid", name="Mid body (parachute bay)", qty=1, g=vol(mid) * PLA, tall=Z_J2 - Z_J1,
+             file="mid_body.stl"),
+        dict(key="nose", name="Nose", qty=1, g=vol(nose) * PLA, tall=H - Z_J2, file="nose.stl"),
+        dict(key="cpl1", name="Joint ring, tail to mid (glued)", qty=1, g=vol(cpl1) * PLA, tall=2 * CPL,
+             file="joint_ring_tail.stl"),
+        dict(key="cpl2", name="Nose shoulder (glued into nose)", qty=1, g=vol(cpl2) * PLA, tall=18 + CPL,
+             file="nose_shoulder.stl"),
+        dict(key="foot", name="Foot pad (TPU)", qty=3, g=vol(foot) * 1.21, tall=LEG["t_pod_bot"] * H + 8,
+             file="foot_pad.stl"),
     ]
-    total = sum(q * m for _, q, m, _ in rows)
+    total = sum(r["qty"] * r["g"] for r in rows)
 
-    # ---- STL, print orientation
     def stl(wp, name):
-        cq.exporters.export(wp, os.path.join(out, "stl", name), tolerance=0.03,
-                            angularTolerance=0.15)
+        cq.exporters.export(wp, os.path.join(out, "stl", name), tolerance=0.03, angularTolerance=0.15)
 
-    stl(P["aft"].translate((0, 0, -Z_EXIT)), "aft_body.stl")
-    stl(P["mid"].translate((0, 0, -(Z_J1 - SPIGOT))), "mid_body.stl")
-    stl(P["mid_r"].translate((0, 0, -(Z_J1 - SPIGOT))), "mid_body_colour1_red.stl")
-    stl(P["mid_w"].translate((0, 0, -(Z_J1 - SPIGOT))), "mid_body_colour2_white.stl")
-    stl(P["nose"].translate((0, 0, -(Z_J2 - SPIGOT))), "nose_cone.stl")
-    stl(P["nose_r"].translate((0, 0, -(Z_J2 - SPIGOT))), "nose_cone_colour1_red.stl")
-    stl(P["nose_w"].translate((0, 0, -(Z_J2 - SPIGOT))), "nose_cone_colour2_white.stl")
-    stl(P["bulk"].translate((0, 0, -Z_BULK)), "bulkhead.stl")
-    big = cq.Workplane("XY").box(600, 300, 800, centered=(True, False, True))
-    ha = P["leg"].intersect(big)                       # y >= 0 half
-    hb = P["leg"].cut(big)                             # y <= 0 half
-    stl(ha.rotate((0, 0, 0), (1, 0, 0), 90), "leg_half_a.stl")
-    stl(hb.rotate((0, 0, 0), (1, 0, 0), -90), "leg_half_b.stl")
-    stl(P["vane"].translate((0, 0, -VANE_Z)).rotate((0, 0, 0), (1, 0, 0), 90), "vane.stl")
-    stl(P["foot"].translate((-R_FOOT, 0, 0)), "foot_pad.stl")
+    flip = lambda wp, z: wp.translate((0, 0, -z)).rotate((0, 0, 0), (1, 0, 0), 180)
+    stl(flip(aft, Z_J1), "tail_with_legs.stl")            # prints joint-face down, feet up
+    stl(mid.translate((0, 0, -Z_J1)), "mid_body.stl")
+    stl(nose.translate((0, 0, -Z_J2)), "nose.stl")
+    if mid_w is not None:
+        stl(mid_r.translate((0, 0, -Z_J1)), "mid_body_colour1_red.stl")
+        stl(mid_w.translate((0, 0, -Z_J1)), "mid_body_colour2_white.stl")
+    if nose_w is not None:
+        stl(nose_r.translate((0, 0, -Z_J2)), "nose_colour1_red.stl")
+        stl(nose_w.translate((0, 0, -Z_J2)), "nose_colour2_white.stl")
+    stl(cpl1.translate((0, 0, -(Z_J1 - CPL))), "joint_ring_tail.stl")
+    stl(cpl2.translate((0, 0, -(Z_J2 - 18))), "nose_shoulder.stl")
+    stl(foot.translate((-R_FOOT, 0, 0)), "foot_pad.stl")
 
-    # ---- STEP assembly
-    G = ghosts()
-    a = cq.Assembly(name="retro_edf_rocket")
-    a.add(P["aft"], name="aft_body", color=cq.Color(*RED))
-    a.add(P["mid_r"], name="mid_body_red", color=cq.Color(*RED))
-    a.add(P["mid_w"], name="mid_body_white", color=cq.Color(*WHITE))
-    a.add(P["nose_r"], name="nose_red", color=cq.Color(*RED))
-    a.add(P["nose_w"], name="nose_white", color=cq.Color(*WHITE))
-    a.add(P["bulk"], name="bulkhead", color=cq.Color(*GREY))
+    asm = cq.Assembly(name="checker_rocket")
+    asm.add(aft, name="tail_with_legs", color=cq.Color(*RED))
+    asm.add(mid_r, name="mid_red", color=cq.Color(*RED))
+    if mid_w is not None:
+        asm.add(mid_w, name="mid_white", color=cq.Color(*WHITE))
+    asm.add(nose_r, name="nose_red", color=cq.Color(*RED))
+    if nose_w is not None:
+        asm.add(nose_w, name="nose_white", color=cq.Color(*WHITE))
+    asm.add(cpl1, name="joint_ring_tail", color=cq.Color(*GREY))
+    asm.add(cpl2, name="nose_shoulder", color=cq.Color(*GREY))
     for i, az in enumerate(LEG_AZ):
-        a.add(rotz(P["leg"], az), name=f"leg_{i+1}", color=cq.Color(*RED))
-        a.add(rotz(P["foot"], az), name=f"foot_{i+1}", color=cq.Color(*DARK))
-    for i, az in enumerate(VANE_AZ):
-        a.add(rotz(P["vane"], az), name=f"vane_{i+1}", color=cq.Color(*GREY))
-    a.save(os.path.join(out, "step", "rocket_assembly.step"))
-    for k, n in (("aft", "aft_body"), ("mid", "mid_body"), ("nose", "nose_cone"),
-                 ("leg", "leg"), ("bulk", "bulkhead"), ("vane", "vane")):
-        cq.exporters.export(P[k], os.path.join(out, "step", n + ".step"))
+        asm.add(rotz(foot, az), name=f"foot_{i+1}", color=cq.Color(*DARK))
+    asm.export(os.path.join(out, "step", "rocket_assembly.step"))
+    for wp, n in ((aft, "tail_with_legs"), (mid, "mid_body"), (nose, "nose"),
+                  (cpl1, "joint_ring_tail"), (cpl2, "nose_shoulder")):
+        cq.exporters.export(wp, os.path.join(out, "step", n + ".step"))
 
-    # ---- viewer meshes: one binary blob + manifest
-    items = [
-        ("Aft body", "aft", P["aft"], RED, 0, None),
-        ("Mid body", "mid", P["mid_r"], RED, 1, None),
-        ("Mid body", "mid", P["mid_w"], WHITE, 1, None),
-        ("Nose cone", "nose", P["nose_r"], RED, 2, None),
-        ("Nose cone", "nose", P["nose_w"], WHITE, 2, None),
-        ("Bulkhead", "bulk", P["bulk"], GREY, 1.5, None),
-    ]
-    for az in LEG_AZ:
-        items.append(("Legs", "legs", rotz(P["leg"], az), RED, 0, az))
-        items.append(("Legs", "legs", rotz(P["foot"], az), DARK, 0, az))
-    for az in VANE_AZ:
-        items.append(("Vanes", "vanes", rotz(P["vane"], az), GREY, -0.6, None))
-    for name, wp in G.items():
-        lvl = {"EDF 90 mm": 0.5, "Vane servos x4": -0.3, "ESC": 1.2}.get(name, 1.5)
-        items.append((name, "ghost", wp, (0.25, 0.45, 0.75), lvl, None))
+    # ---- data for the interactive viewer
+    ts = np.linspace(SHAPE["t_tail"], 1.0, 161)
+    shape = dict(SHAPE, table=[[round(float(t), 5), round(float(_p(t)), 5)] for t in ts])
+    data = dict(defaults=P, shape=shape, leg=LEG, motors=MOTORS, leg_az=LEG_AZ, lug_az=LUG_AZ,
+                walls=dict(aft=WALL_AFT, body=WALL), cad=dict(
+                    rows=[dict(r, g=round(r["g"], 1), tall=round(r["tall"], 1)) for r in rows],
+                    total=round(total, 1), sleeve_len=round(info["sleeve_len"], 1)))
+    with open(os.path.join(out, "viewer", "shape.json"), "w") as f:
+        json.dump(data, f)
 
-    blob, manifest = bytearray(), []
-    for label, group, wp, col, lvl, az in items:
+    # ---- exact CAD meshes, for checking renders
+    items = [("aft", aft, RED), ("mid", mid_r, RED), ("nose", nose_r, RED),
+             ("cpl1", cpl1, GREY), ("cpl2", cpl2, GREY)]
+    if mid_w is not None:
+        items.append(("mid", mid_w, WHITE))
+    if nose_w is not None:
+        items.append(("nose", nose_w, WHITE))
+    items += [("foot", rotz(foot, az), DARK) for az in LEG_AZ]
+    blob, man = bytearray(), []
+    for group, wp, col in items:
         v, t = mesh_of(wp)
-        manifest.append(dict(label=label, group=group, color=[round(c, 3) for c in col],
-                             level=lvl, az=az, voff=len(blob), vn=int(len(v))))
+        man.append(dict(group=group, color=list(col), voff=len(blob), vn=int(len(v))))
         blob += v.tobytes()
-        manifest[-1].update(toff=len(blob), tn=int(len(t)))
+        man[-1].update(toff=len(blob), tn=int(len(t)))
         blob += t.tobytes()
-    fsa = math.pi * ((EDF_ID / 2) ** 2 - (EDF_HUB / 2) ** 2)
-    exit_r = ro(Z_EXIT) - WALL_AFT
-    win_area = 6 * (37 * 36 + 37 * 12)
-    meta = dict(
-        height=Z_TIP, max_dia=round(2 * max(ro(z) for z in np.linspace(Z_EXIT, Z_TIP, 500)), 1),
-        foot_circle=2 * R_FOOT, fsa=round(fsa), exit_pct=round(100 * math.pi * exit_r ** 2 / fsa),
-        inlet_pct=round(100 * win_area / fsa), printed_g=round(total),
-        rows=[dict(name=n, qty=q, each=round(m, 1), file=f) for n, q, m, f in rows],
-        stations=dict(exit=Z_EXIT, vane=VANE_Z, seat=Z_SEAT, j1=Z_J1, bulk=Z_BULK, j2=Z_J2, tip=Z_TIP),
-    )
-    with open(os.path.join(out, "viewer", "meshes.bin"), "wb") as f:
+    with open(os.path.join(out, "viewer", "cad_meshes.bin"), "wb") as f:
         f.write(blob)
-    with open(os.path.join(out, "viewer", "manifest.json"), "w") as f:
-        json.dump(dict(parts=manifest, meta=meta), f)
+    with open(os.path.join(out, "viewer", "cad_manifest.json"), "w") as f:
+        json.dump(man, f)
 
-    print(f"\n{'part':46s} qty   g each")
-    for n, q, m, _ in rows:
-        print(f"{n:46s} {q:3d} {m:8.1f}")
-    print(f"{'printed total (PLA @1.24)':46s}     {total:8.1f}")
-    print("meta:", json.dumps({k: v for k, v in meta.items() if k not in ('rows',)}))
-    print("viewer blob: %.2f MB, %d tris" % (len(blob) / 1e6, sum(m['tn'] for m in manifest)))
+    print(f"\nH={H:.0f}  D={2*R:.0f}  H/D={H/(2*R):.1f}  stance={P['STANCE']:.0f}  motor={P['MOTOR']} mm")
+    print(f"{'part':38s} qty  g each  print height")
+    for r in rows:
+        print(f"{r['name']:38s} {r['qty']:3d} {r['g']:7.1f} {r['tall']:8.0f}")
+    print(f"{'printed total (PLA)':38s}     {total:7.1f}")
+    print("motor sleeve length %.0f mm, tail dia %.1f mm, bore %.1f mm" %
+          (info["sleeve_len"], 2 * ro(Z_TAIL), 2 * RB))
+    return dict(aft=aft, mid=mid, nose=nose, cpl1=cpl1, cpl2=cpl2, foot=foot, leg=leg)
 
 
 if __name__ == "__main__":
