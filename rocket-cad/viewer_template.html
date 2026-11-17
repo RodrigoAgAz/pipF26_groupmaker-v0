@@ -114,8 +114,8 @@ ul.plain li::marker { color: var(--red); }
 <div class="page">
   <header>
     <div class="checks" aria-hidden="true"></div>
-    <h1>Checker rocket, rev B</h1>
-    <p class="lede">A closed, slender body with a standard hobby rocket motor in the tail. Drag the model to turn it, then use the sliders to change its proportions. Every number updates as you go.</p>
+    <h1>Checker rocket, rev C</h1>
+    <p class="lede">The shape is now traced from the reference photos, with a standard hobby rocket motor in the tail. Drag the model to turn it, then use the sliders to change its proportions. Every number updates as you go.</p>
   </header>
 
   <section class="bench">
@@ -199,7 +199,7 @@ ul.plain li::marker { color: var(--red); }
       <ul class="plain">
         <li>Stability is not checked. Model it in OpenRocket and expect to add nose weight.</li>
         <li>A motor case gets hot enough to soften PLA. Print the tail in PETG or ASA and glue a cardboard motor tube into the sleeve.</li>
-        <li>No motor retainer is modelled yet.</li>
+        <li>No motor retainer or launch lugs are modelled yet. The lugs came off for the look.</li>
         <li>The legs print upright with the tail, so they are weakest across their layers. A hard landing can snap one.</li>
         <li>Use certified commercial motors only, and fly under your local model rocketry rules.</li>
       </ul>
@@ -218,7 +218,7 @@ ul.plain li::marker { color: var(--red); }
   const REF_RATIO = DATA.defaults.H / DATA.defaults.D, REF_STANCE = DATA.defaults.STANCE / DATA.defaults.D;
   const S = Object.assign({}, DATA.defaults);
   try {
-    const saved = JSON.parse(localStorage.getItem('checker-rocket') || 'null');
+    const saved = JSON.parse(localStorage.getItem('checker-rocket-c') || 'null');
     if (saved) KEYS.forEach(k => { if (typeof saved[k] === 'number' && isFinite(saved[k])) S[k] = saved[k]; });
   } catch (e) { /* storage unavailable */ }
   const $ = id => document.getElementById(id);
@@ -235,13 +235,11 @@ ul.plain li::marker { color: var(--red); }
     const H = s.H, R = s.D / 2, d = { H: H, R: R };
     d.ro = z => R * prof(z / H);
     d.zTail = SH.t_tail * H; d.zJ1 = SH.t_j1 * H; d.zC0 = SH.t_chk0 * H; d.zC1 = SH.t_chk1 * H;
-    d.rowH = (d.zC1 - d.zC0) / s.ROWS; d.zJ2 = d.zC0 + Math.floor(s.ROWS / 2) * d.rowH;
+    d.rowH = (d.zC1 - d.zC0) / s.ROWS; d.zJ2 = d.zC0 + Math.ceil(s.ROWS / 2) * d.rowH;
     d.motor = DATA.motors[s.MOTOR]; d.RB = d.motor.tube_od / 2 + 0.15;
-    d.Rf = s.STANCE / 2; d.legT = Math.max(LG.thick_min, LG.thick * s.D); d.podR = LG.pod_r * s.D;
-    d.zRt = LG.t_root_top * H; d.zRb = LG.t_root_bot * H; d.zPt = LG.t_pod_tip * H;
-    d.zPm = LG.t_pod_max * H; d.zPb = LG.t_pod_bot * H;
-    d.zc = d.zJ1 - 16; d.rs = d.ro(d.zc) - 1.2; d.L = d.zc - 2 - (d.rs + 0.5 - d.RB);
-    d.sleeve = d.L - d.zTail; d.lugX = R + 5;
+    d.Rf = s.STANCE / 2; d.podR = LG.pod_r * s.D; d.finW = LG.fin_w * s.D;
+    d.zRt = LG.t_root_top * H; d.zPt = LG.t_pod_tip * H; d.zPm = LG.t_pod_max * H; d.zPb = LG.t_pod_bot * H;
+    d.zc = d.zJ1 - 16; d.rs = d.ro(d.zc) - 1.2;
     d.fits = d.ro(d.zTail) >= d.RB + 0.8;
     d.minD = Math.ceil(2 * (d.RB + 0.8) / SH.profile[0][1]);
     return d;
@@ -249,8 +247,8 @@ ul.plain li::marker { color: var(--red); }
   function legCurves(d) {
     const p0 = [d.ro(d.zRt) - 1, d.zRt], p2 = [d.Rf, d.zPt];
     const p1 = [p0[0] + LG.outer_ctrl[0] * (p2[0] - p0[0]), p0[1] + LG.outer_ctrl[1] * (p2[1] - p0[1])];
-    const q0 = [d.Rf - 0.75 * d.podR, d.zPm], q2 = [d.ro(d.zRb) - 1, d.zRb];
-    const q1 = [q2[0] + LG.inner_ctrl[0] * (q0[0] - q2[0]), d.zRb - LG.inner_ctrl[1] * (d.zRb - d.zPm)];
+    const q0 = [d.Rf - 0.9 * d.podR, d.zPm], q2 = [d.ro(d.zTail) - 1, d.zTail];
+    const q1 = [q2[0] + LG.inner_ctrl[0] * (q0[0] - q2[0]), d.zTail - LG.inner_ctrl[1] * (d.zTail - d.zPm)];
     return { p0: p0, p1: p1, p2: p2, q0: q0, q1: q1, q2: q2 };
   }
   function qb(a, b, c, n) {
@@ -259,15 +257,34 @@ ul.plain li::marker { color: var(--red); }
       out.push([u * u * a[0] + 2 * u * t * b[0] + t * t * c[0], u * u * a[1] + 2 * u * t * b[1] + t * t * c[1]]); }
     return out;
   }
+  function xAt(pts, z) {            // linear x(z) through [[x, z], ...] sorted by ascending z
+    if (z <= pts[0][1]) return pts[0][0];
+    for (let i = 0; i < pts.length - 1; i++) { const a = pts[i], b = pts[i + 1];
+      if (z <= b[1]) return a[0] + (b[1] > a[1] ? (z - a[1]) / (b[1] - a[1]) : 0) * (b[0] - a[0]); }
+    return pts[pts.length - 1][0];
+  }
+  function legSlices(d) {           // horizontal slices of one fin
+    const c = legCurves(d), out = qb(c.p0, c.p1, c.p2, 40).reverse(), inn = qb(c.q0, c.q1, c.q2, 24), zs = inn.map(p => p[1]);
+    for (let i = 1; i <= 18; i++) zs.push(d.zTail + (d.zRt - d.zTail) * i / 18);
+    return zs.map(z => ({ z: z, xo: z <= d.zPt ? d.Rf : xAt(out, z), xi: z < d.zTail ? xAt(inn, z) : inn[inn.length - 1][0], w: d.finW }));
+  }
+  function sectPts(xi, xo, w, K) {  // upper half of a slice: rounded inside, sharp spine outside
+    const s0 = Math.min(Math.max(w / (xo - xi), 0.08), 0.45), pts = [];
+    for (let i = 0; i <= K; i++) {
+      const s = Math.pow(i / K, 1.5);
+      const f = s < s0 ? Math.sqrt(Math.max(1 - Math.pow(1 - s / s0, 2), 0)) : 1 - Math.pow((s - s0) / (1 - s0), 1.6);
+      pts.push([xi + s * (xo - xi), w * Math.max(f, 0)]);
+    }
+    return pts;
+  }
   function legOutline(d) {
     const c = legCurves(d);
-    return qb(c.p0, c.p1, c.p2, 24).concat([[d.Rf + 0.3 * d.podR, d.zPm]], qb(c.q0, c.q1, c.q2, 24));
+    return qb(c.p0, c.p1, c.p2, 24).concat([[d.Rf, d.zPm]], qb(c.q0, c.q1, c.q2, 24));
   }
   function podProfile(d) {
-    const r = d.podR, a = d.zPb, m = d.zPm, t = d.zPt;
-    const pts = [[0.5 * r, a], [0.86 * r, a + 0.35 * (m - a)], [r, m], [0.82 * r, m + 0.33 * (t - m)], [0.42 * r, m + 0.7 * (t - m)], [0.01, t]];
+    const pts = LG.pod.map(p => [Math.max(p[0] * d.podR, 0.01), d.zPb + p[1] * (d.zPt - d.zPb)]);
     if (!window.THREE) return pts;
-    return new THREE.SplineCurve(pts.map(p => new THREE.Vector2(p[0], p[1]))).getPoints(28).map(v => [Math.max(v.x, 0.01), v.y]);
+    return new THREE.SplineCurve(pts.map(p => new THREE.Vector2(p[0], p[1]))).getPoints(44).map(v => [Math.max(v.x, 0.01), v.y]);
   }
 
   // ---------------------------------------------------------------- estimates
@@ -279,13 +296,14 @@ ul.plain li::marker { color: var(--red); }
   }
   function polyArea(p) { let a = 0; for (let i = 0; i < p.length; i++) { const q = p[(i + 1) % p.length]; a += p[i][0] * q[1] - q[0] * p[i][1]; } return Math.abs(a) / 2; }
   function rawMass(s) {
-    const d = dims(s), rho = 1.24e-3, la = polyArea(legOutline(d));
-    const leg = (2 * la * 0.9 + la * d.legT * 0.10) * rho;
+    const d = dims(s), rho = 1.24e-3, la = polyArea(legOutline(d)), ph = d.zPt - d.zPb;
+    const fin = (2 * la * 0.9 + la * d.finW * 0.06) * rho;
+    const pod = (2 * Math.PI * 0.7 * d.podR * ph * 0.9 + 0.5 * Math.PI * d.podR * d.podR * ph * 0.06) * rho;
     return {
-      aft: shellArea(d, d.zTail, d.zJ1) * 1.2 * rho + 2 * Math.PI * d.RB * 1.2 * Math.max(d.sleeve, 10) * rho + 3 * leg,
+      aft: shellArea(d, d.zTail, d.zJ1) * 1.2 * rho + 2 * Math.PI * d.RB * 1.2 * Math.max(d.zc - d.zTail, 10) * rho + 3 * (fin + pod),
       mid: shellArea(d, d.zJ1, d.zJ2) * rho, nose: shellArea(d, d.zJ2, d.H) * rho,
       cpl1: 2 * Math.PI * d.ro(d.zJ1) * 1.2 * 24 * rho, cpl2: 2 * Math.PI * d.ro(d.zJ2) * 1.2 * 30 * rho,
-      foot: Math.PI * Math.pow(0.5 * d.podR, 2) * d.zPb * 1.21e-3,
+      foot: Math.PI * Math.pow(0.26 * d.podR, 2) * d.zPb * 1.21e-3,
     };
   }
   const CAL = (function () {   // scale the quick formulas so they agree with the CAD volumes at the default size
@@ -300,10 +318,9 @@ ul.plain li::marker { color: var(--red); }
     });
     const printed = rows.reduce((a, r) => a + r.g * r.qty, 0);
     const liftoff = printed + d.motor.mass + 60;       // + parachute, cord, motor tube, nose weight
-    const reach = d.Rf + d.podR;
     return { d: d, rows: rows, printed: printed, liftoff: liftoff, thrust: 5 * liftoff * 9.81 / 1000,
-      tallest: Math.max.apply(null, rows.map(r => r.tall)), foot: [2 * reach * Math.sin(Math.PI / 3), 1.5 * reach],
-      overhang: Math.max(0, d.motor.length - d.sleeve) };
+      tallest: Math.max.apply(null, rows.map(r => r.tall)),
+      foot: [2 * d.Rf * Math.sin(Math.PI / 3) + 2 * d.podR, 1.5 * d.Rf + 2 * d.podR] };
   }
 
   // ---------------------------------------------------------------- panel
@@ -315,16 +332,16 @@ ul.plain li::marker { color: var(--red); }
     $('STANCE-o').textContent = S.STANCE + ' mm'; $('ROWS-o').textContent = S.ROWS;
     document.querySelectorAll('input[name="COLS"]').forEach(i => { i.checked = +i.value === S.COLS; });
     document.querySelectorAll('input[name="MOTOR"]').forEach(i => { i.checked = +i.value === S.MOTOR; });
-    const ratio = S.H / S.D, near = Math.abs(ratio - REF_RATIO) < 0.6;
+    const ratio = S.H / S.D, near = Math.abs(ratio - REF_RATIO) < 0.4;
     const cell = (t, v, u, note, cls) => '<div><dt>' + t + '</dt><dd>' + v + (u ? '<small>' + u + '</small>' : '') + '</dd>' +
       (note ? '<span class="note ' + (cls || '') + '">' + note + '</span>' : '') + '</div>';
     $('figs').innerHTML =
       cell('Height to width', fmt(ratio, 1) + ' : 1', '', near ? 'Matches the reference' : 'Reference is ' + fmt(REF_RATIO, 1) + ' : 1', near ? 'ok' : 'warn') +
-      cell('Motor fit', d.fits ? 'Fits' : 'Too narrow', '', d.fits ? (e.overhang > 1 ? 'Motor sticks out ' + fmt(e.overhang) + ' mm' : 'Motor sits inside the tail') : 'Needs ' + d.minD + ' mm diameter or a 24 mm mount', d.fits ? 'ok' : 'warn') +
+      cell('Motor fit', d.fits ? 'Fits' : 'Too narrow', '', d.fits ? 'Motor sits inside the tail' : 'Needs ' + d.minD + ' mm diameter or a 24 mm mount', d.fits ? 'ok' : 'warn') +
       cell('Printed mass', fmt(e.printed), 'g', 'Estimate, PLA') +
       cell('Lift-off mass', fmt(e.liftoff), 'g', 'With motor and recovery gear') +
       cell('Thrust needed', fmt(e.thrust, 0), 'N', 'Average, for 5 : 1 off the pad') +
-      cell('Largest print', fmt(e.tallest), 'mm tall', fmt(e.foot[0]) + ' &times; ' + fmt(e.foot[1]) + ' mm on the bed', e.tallest > 250 ? 'warn' : '');
+      cell('Largest print', fmt(e.tallest), 'mm tall', fmt(e.foot[0]) + ' &times; ' + fmt(e.foot[1]) + ' mm on the bed', (e.tallest > 250 || e.foot[0] > 256) ? 'warn' : '');
     $('rows').innerHTML = e.rows.map(r => '<tr><td>' + r.name + '</td><td class="n">' + r.qty + '</td><td class="n">' + fmt(r.g, 1) +
       '</td><td class="n">' + fmt(r.tall) + ' mm</td><td class="f">' + r.file + '</td></tr>').join('');
     $('total').textContent = fmt(e.printed) + ' g';
@@ -332,7 +349,7 @@ ul.plain li::marker { color: var(--red); }
     $('total-note').textContent = isDefault ? 'matches the exported files' : 'estimate; files are built at the default size';
     $('json').value = JSON.stringify(KEYS.reduce((o, k) => { o[k] = S[k]; return o; }, {}));
     $('caption').textContent = S.H + ' × ⌀' + S.D + ' mm  ·  ' + fmt(ratio, 1) + ' : 1';
-    try { localStorage.setItem('checker-rocket', $('json').value); } catch (err) { /* ignore */ }
+    try { localStorage.setItem('checker-rocket-c', $('json').value); } catch (err) { /* ignore */ }
   }
   function changed() { renderPanel(); if (three) three.rebuild(); }
   ['H', 'D', 'STANCE', 'ROWS'].forEach(k => $(k).addEventListener('input', ev => { S[k] = +ev.target.value; changed(); }));
@@ -354,40 +371,53 @@ ul.plain li::marker { color: var(--red); }
     const stage = $('stage'), canvas = $('view');
     const renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
     renderer.localClippingEnabled = true;
+    renderer.outputEncoding = THREE.sRGBEncoding;
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(26, 1, 10, 8000);
     camera.up.set(0, 0, 1); scene.add(camera);
-    scene.add(new THREE.AmbientLight(0xffffff, 0.18));
-    const sun = new THREE.DirectionalLight(0xffffff, 0.92); sun.position.set(-0.9, 0.7, 1.0); camera.add(sun);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.05));
+    const sun = new THREE.DirectionalLight(0xffffff, 0.42); sun.position.set(-0.9, 0.7, 1.0); camera.add(sun);
 
-    const ramp = new THREE.DataTexture(new Uint8Array([150, 150, 150, 215, 215, 215, 255, 255, 255]), 3, 1, THREE.RGBFormat);
-    ramp.minFilter = ramp.magFilter = THREE.NearestFilter; ramp.needsUpdate = true;
-    const cutPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-    const RED = [0.86, 0.13, 0.09], WHITE = [0.98, 0.97, 0.94];
-    const toon = (hex, vc) => new THREE.MeshToonMaterial({ color: hex, vertexColors: !!vc, gradientMap: ramp, side: THREE.DoubleSide });
+    // studio surroundings: never drawn, only reflected in the lacquer
+    (function () {
+      const env = new THREE.Scene();
+      const panel = function (w, h, pos, v) {
+        const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: new THREE.Color(v, v, v), side: THREE.DoubleSide }));
+        m.position.set(pos[0], pos[1], pos[2]); m.lookAt(0, 0, 0); env.add(m);
+      };
+      env.add(new THREE.Mesh(new THREE.SphereGeometry(70, 24, 16), new THREE.MeshBasicMaterial({ color: 0x2c3036, side: THREE.BackSide })));
+      panel(22, 80, [-36, -24, 12], 3.4); panel(10, 70, [30, -32, 8], 2.0); panel(16, 60, [14, 40, 10], 1.5);
+      panel(100, 100, [0, 0, 50], 1.0); panel(140, 140, [0, 0, -45], 0.22);
+      const pm = new THREE.PMREMGenerator(renderer);
+      scene.environment = pm.fromScene(env, 0.02).texture; pm.dispose();
+    })();
+
+    const lin = v => Math.pow(v, 2.2);
+    const RED = [0.84, 0.09, 0.06].map(lin), WHITE = [0.97, 0.96, 0.92].map(lin);
+    const lacquer = (rgb, vc) => new THREE.MeshPhysicalMaterial({
+      color: vc ? new THREE.Color(1, 1, 1) : new THREE.Color(rgb[0], rgb[1], rgb[2]), vertexColors: !!vc,
+      roughness: 0.36, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.05, side: THREE.DoubleSide });
+    const matte = function (hex) { const m = new THREE.MeshStandardMaterial({ color: hex, roughness: 0.8, metalness: 0, side: THREE.DoubleSide }); m.color.convertSRGBToLinear(); return m; };
     const M = {
-      body: toon(0xffffff, true), red: toon(0xdb2117), dark: toon(0x26262a), ring: toon(0xb9bcc2),
-      tube: toon(0xc49a62), motor: toon(0x3a3b40), chute: toon(0xf2a33a),
-      ink: new THREE.MeshBasicMaterial({ color: 0x111111, side: THREE.BackSide }),
+      body: lacquer(null, true), red: lacquer(RED), dark: matte(0x1f1f22), ring: matte(0xb9bcc2),
+      tube: matte(0xc49a62), motor: matte(0x3a3b40), chute: matte(0xf2a33a),
       ground: new THREE.MeshBasicMaterial({ color: 0xecd592 }), grid: new THREE.LineBasicMaterial({ color: 0xc9ae5e }),
     };
-    const clipped = [M.body, M.red, M.ring, M.tube, M.ink];
+    const clipped = [M.body, M.red, M.ring, M.tube];
 
-    // lathe about Z through (cx, 0). rz: [[r, z], ...]. Non-indexed so cells can be flat-coloured.
+    // lathe about Z through (cx, 0). rz: [[r, z], ...]. Non-indexed so checker cells can be flat-coloured.
     function lathe(rz, opt) {
       opt = opt || {};
-      const seg = opt.seg || 48, n = rz.length, off = opt.offset || 0, pos = [], nor = [], col = [];
-      const nr = [], nz = [];
+      const seg = opt.seg || 48, n = rz.length, pos = [], nor = [], col = [], nr = [], nz = [];
       for (let i = 0; i < n; i++) {
         const a = rz[Math.max(i - 1, 0)], b = rz[Math.min(i + 1, n - 1)];
-        let dr = b[0] - a[0], dz = b[1] - a[1]; const l = Math.hypot(dr, dz) || 1;
+        const dr = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dr, dz) || 1;
         nr.push(dz / l); nz.push(-dr / l);
       }
-      const P = rz.map((p, i) => [Math.max(p[0] + nr[i] * off, 0.001), p[1] + nz[i] * off]);
       const cs = [], sn = [];
       for (let j = 0; j <= seg; j++) { const a = j / seg * Math.PI * 2; cs.push(Math.cos(a)); sn.push(Math.sin(a)); }
-      const push = (i, j, c) => {
-        pos.push((opt.cx || 0) + P[i][0] * cs[j], P[i][0] * sn[j], P[i][1]);
+      const push = function (i, j, c) {
+        pos.push((opt.cx || 0) + rz[i][0] * cs[j], rz[i][0] * sn[j], rz[i][1]);
         nor.push(nr[i] * cs[j], nr[i] * sn[j], nz[i]);
         if (c) col.push(c[0], c[1], c[2]);
       };
@@ -402,14 +432,25 @@ ul.plain li::marker { color: var(--red); }
       if (opt.color) g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
       return g;
     }
-    function legGeo(d, grow) {
-      const c = legCurves(d), sh = new THREE.Shape(), b = 0.36 * d.legT;
-      sh.moveTo(c.p0[0], c.p0[1]); sh.quadraticCurveTo(c.p1[0], c.p1[1], c.p2[0], c.p2[1]);
-      sh.lineTo(d.Rf + 0.3 * d.podR, d.zPm); sh.lineTo(c.q0[0], c.q0[1]);
-      sh.quadraticCurveTo(c.q1[0], c.q1[1], c.q2[0], c.q2[1]); sh.closePath();
-      const depth = d.legT - 2 * b;
-      const g = new THREE.ExtrudeGeometry(sh, { depth: depth, bevelEnabled: true, bevelThickness: b + grow, bevelSize: b, bevelOffset: -b + grow, bevelSegments: 4, curveSegments: 28 });
-      g.translate(0, 0, -depth / 2); g.rotateX(Math.PI / 2);
+    // fin: stitch the horizontal slices. Each ring is nose, upper side out to the spine, then the lower side back.
+    function finGeo(d) {
+      const sl = legSlices(d), K = DATA.sect_k, N = 2 * K + 1, pos = [], idx = [];
+      sl.forEach(function (s) {
+        const up = sectPts(s.xi, s.xo, s.w, K);
+        pos.push(up[0][0], 0, s.z);
+        for (let i = 1; i <= K; i++) pos.push(up[i][0], up[i][1], s.z);
+        for (let i = K; i >= 1; i--) pos.push(up[i][0], -up[i][1], s.z);
+      });
+      for (let r = 0; r < sl.length - 1; r++) {
+        const a = r * N, b = a + N;
+        for (let j = 0; j < N; j++) {
+          if (j === K) continue;                 // the two spine vertices coincide: keeps the spine crisp
+          const p = j, q = (j + 1) % N;
+          idx.push(a + p, a + q, b + q, a + p, b + q, b + p);
+        }
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
       return g;
     }
 
@@ -419,63 +460,55 @@ ul.plain li::marker { color: var(--red); }
     function rebuild() {
       root.traverse(o => { if (o.geometry) o.geometry.dispose(); });
       while (root.children.length) root.remove(root.children[0]);
-      const d = dims(S), ink = Math.max(0.7, d.H / 600 * 0.95);
-      const mk = name => { const g = new THREE.Group(); root.add(g); groups[name] = g; return g; };
+      const d = dims(S);
       groups = {};
+      const mk = function (name) { const g = new THREE.Group(); root.add(g); groups[name] = g; return g; };
       // body sections
-      const zs = new Set(); const N = 110;
-      for (let i = 0; i <= N; i++) zs.add(+(d.zTail + (d.H - d.zTail) * i / N).toFixed(3));
+      const zs = new Set(), NZ = 120;
+      for (let i = 0; i <= NZ; i++) zs.add(+(d.zTail + (d.H - d.zTail) * i / NZ).toFixed(3));
       for (let j = 0; j <= S.ROWS; j++) zs.add(+(d.zC0 + j * d.rowH).toFixed(3));
       [d.zJ1, d.zJ2].forEach(z => zs.add(+z.toFixed(3)));
       const all = Array.from(zs).sort((a, b) => a - b);
-      const colour = (z, j, seg) => {
+      const colour = function (z, j, seg) {
         if (z < d.zC0 || z > d.zC1) return RED;
         const row = Math.min(Math.floor((z - d.zC0) / d.rowH), S.ROWS - 1), colI = Math.floor(j / (seg / S.COLS));
         return (row + colI) % 2 === 0 ? WHITE : RED;
       };
       [['aft', d.zTail, d.zJ1], ['mid', d.zJ1, d.zJ2], ['nose', d.zJ2, d.H]].forEach(function (s) {
         const rz = all.filter(z => z >= s[1] - 1e-6 && z <= s[2] + 1e-6).map(z => [Math.max(d.ro(z), 0.001), z]);
-        const g = mk(s[0]);
-        add(g, lathe(rz, { color: colour }), M.body);
-        add(g, lathe(rz, { offset: ink }), M.ink);
+        add(mk(s[0]), lathe(rz, { color: colour, seg: 96 }), M.body);
       });
-      // legs, pods, feet
-      const lg = legGeo(d, 0), lgInk = legGeo(d, ink), pod = podProfile(d);
-      const podG = lathe(pod, { cx: d.Rf, seg: 28 }), podInk = lathe(pod, { cx: d.Rf, seg: 28, offset: ink });
-      const footRz = [[0.01, 0], [0.5 * d.podR, 0], [0.5 * d.podR, d.zPb]];
-      const footG = lathe(footRz, { cx: d.Rf, seg: 20 });
+      // fins, pods, feet
+      const fin = finGeo(d), podG = lathe(podProfile(d), { cx: d.Rf, seg: 40 });
+      const footG = lathe([[0.01, 0], [0.26 * d.podR, 0], [0.26 * d.podR, d.zPb]], { cx: d.Rf, seg: 20 });
       DATA.leg_az.forEach(function (az) {
         const g = new THREE.Group(); g.rotation.z = az * Math.PI / 180; groups.aft.add(g);
-        add(g, lg, M.red); add(g, lgInk, M.ink); add(g, podG, M.red); add(g, podInk, M.ink);
+        add(g, fin, M.red); add(g, podG, M.red);
         const fg = new THREE.Group(); fg.rotation.z = g.rotation.z; mk('foot' + az).add(fg); add(fg, footG, M.dark);
-      });
-      // launch lugs
-      [[d.zTail + 6, 'aft'], [(d.zJ1 + d.zJ2) / 2 - 25, 'mid']].forEach(function (l) {
-        const z0 = l[0], xi = Math.min(d.ro(z0), d.ro(z0 + 80)) - 0.6, w = d.lugX + 4.7 - xi, z1 = z0 + 25 + 2 * w;
-        const g = new THREE.Group(); g.rotation.z = DATA.lug_az * Math.PI / 180; groups[l[1]].add(g);
-        add(g, lathe([[4.7, z0 + w], [4.7, z1 - w]], { cx: d.lugX, seg: 16 }), M.red);
-        const web = new THREE.BoxGeometry(d.lugX - 3 - xi, 3, z1 - z0 - w); web.translate((xi + d.lugX - 3) / 2, 0, (z0 + z1) / 2);
-        add(g, web, M.red);
       });
       // joint rings
       const r1 = d.ro(d.zJ1) - 1.4, r2 = d.ro(d.zJ2) - 1.2;
       add(mk('cpl1'), lathe([[r1 - 0.5, d.zJ1 - 12], [r1, d.zJ1], [r1, d.zJ1 + 12]], { seg: 40 }), M.ring);
       add(mk('cpl2'), lathe([[r2, d.zJ2 - 18], [r2, d.zJ2], [r2 - 0.5, d.zJ2 + 12]], { seg: 40 }), M.ring);
-      // inside: motor cone and tube, motor, parachute
+      // inside: centring cone, motor tube, motor, parachute
+      const tubeTop = d.zTail + d.motor.length + 6;
       if (d.fits) {
         const inner = mk('inner');
-        add(inner, lathe([[d.RB - 2.5, d.L - 2.5], [d.rs, d.zc - 1]], { seg: 40 }), M.red);
-        add(inner, lathe([[d.RB, d.zTail], [d.RB, d.L]], { seg: 40 }), M.tube);
-        const mr = S.MOTOR / 2, mb = d.zTail - Math.max(0, d.motor.length - d.sleeve) - 3, mt = mb + d.motor.length;
+        add(inner, lathe([[d.RB, d.zc - (d.rs - d.RB)], [d.rs, d.zc]], { seg: 40 }), M.red);
+        add(inner, lathe([[d.RB, d.zTail], [d.RB, tubeTop]], { seg: 40 }), M.tube);
+        const mr = S.MOTOR / 2, mb = d.zTail - 2, mt = mb + d.motor.length;
         add(mk('motor'), lathe([[0.01, mb + 6], [mr * 0.45, mb + 6], [mr * 0.62, mb], [mr, mb], [mr, mt], [0.01, mt]], { seg: 32 }), M.motor);
       }
-      const cr = (d.ro((d.zJ1 + d.zJ2) / 2) - 3) * 0.86, ca = d.zJ1 + 26, cb = d.zJ2 - 24, chute = [];
-      for (let i = 0; i <= 14; i++) { const a = i / 14 * Math.PI; chute.push([Math.max(cr * Math.sin(a), 0.01), (ca + cb) / 2 - (cb - ca) / 2 * Math.cos(a)]); }
-      add(mk('chute'), lathe(chute, { seg: 24 }), M.chute);
+      const ca = Math.max(d.zJ1 + 26, tubeTop + 12), cb = d.zJ2 - 24;
+      if (cb - ca > 20) {
+        const cr = (d.ro((ca + cb) / 2) - 3) * 0.86, chute = [];
+        for (let i = 0; i <= 14; i++) { const a = i / 14 * Math.PI; chute.push([Math.max(cr * Math.sin(a), 0.01), (ca + cb) / 2 - (cb - ca) / 2 * Math.cos(a)]); }
+        add(mk('chute'), lathe(chute, { seg: 24 }), M.chute);
+      }
       // ground
       if (ground) { scene.remove(ground); ground.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
       ground = new THREE.Group(); scene.add(ground);
-      const gr = Math.ceil((d.Rf + 110) / 50) * 50;
+      const gr = Math.ceil((d.Rf + d.podR + 90) / 50) * 50;
       const disc = new THREE.Mesh(new THREE.CircleGeometry(gr, 64), M.ground); disc.position.z = -0.6; ground.add(disc);
       const pts = [];
       for (let v = -gr; v <= gr; v += 50) { const h = Math.sqrt(Math.max(gr * gr - v * v, 0)); pts.push(-h, v, 0, h, v, 0, v, -h, 0, v, h, 0); }
@@ -484,22 +517,23 @@ ul.plain li::marker { color: var(--red); }
       layout();
     }
     function layout() {
-      const e = view.explode, d = dims(S), k = d.H / 600;
+      const e = view.explode, k = S.H / 600;
       const lift = { aft: 0.9, inner: 0.9, cpl1: 1.45, mid: 2.0, chute: 2.0, cpl2: 2.65, nose: 3.2, motor: 0 };
       Object.keys(groups).forEach(function (n) {
         const g = groups[n];
-        g.position.z = (n.indexOf('foot') === 0 ? 0 : (lift[n] || 0)) * e * k;
-        if (n === 'cpl1' || n === 'cpl2' || n === 'inner' || n === 'motor' || n === 'chute') g.visible = view.cut || e > 0 && n !== 'inner';
+        g.position.z = (lift[n] || 0) * e * k;
+        if (n === 'cpl1' || n === 'cpl2' || n === 'inner' || n === 'motor' || n === 'chute') g.visible = view.cut || (e > 0 && n !== 'inner');
       });
-      clipped.forEach(m => { m.clippingPlanes = view.cut ? [cutPlane] : []; m.needsUpdate = true; });
+      clipped.forEach(function (m) { m.clippingPlanes = view.cut ? [cutPlane] : []; m.needsUpdate = true; });
       dirty = true;
     }
+    const cutPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
     // ---- camera: own orbit so the page needs no second library
     const cam = { theta: -1.02, phi: 1.36, dist: 1500, tz: 300 };
     let dirty = true, spinning = false, userDist = null;
     function fit() {
-      const d = dims(S), k = d.H / 600, h = d.H + view.explode * k * 3.3 + 30, w = S.STANCE + 70, t = Math.tan(camera.fov * Math.PI / 360);
+      const d = dims(S), k = d.H / 600, h = d.H + view.explode * k * 3.3 + 30, w = S.STANCE + 2 * d.podR + 40, t = Math.tan(camera.fov * Math.PI / 360);
       cam.tz = (d.H + view.explode * k * 1.4) / 2 - 8;
       return Math.max(h / 2 / t, w / 2 / (t * camera.aspect)) * 1.06;
     }
@@ -512,7 +546,8 @@ ul.plain li::marker { color: var(--red); }
     function theme() {
       const cs = getComputedStyle(document.documentElement), v = n => cs.getPropertyValue(n).trim();
       renderer.setClearColor(new THREE.Color(v('--sky') || '#bcdcec'), 1);
-      M.ground.color.set(v('--ground') || '#ecd592'); M.grid.color.set(v('--gridline') || '#c9ae5e'); dirty = true;
+      M.ground.color.set(v('--ground') || '#ecd592').convertSRGBToLinear();
+      M.grid.color.set(v('--gridline') || '#c9ae5e').convertSRGBToLinear(); dirty = true;
     }
     function resize() {
       const w = stage.clientWidth, h = stage.clientHeight; if (!w || !h) return;
@@ -547,7 +582,7 @@ ul.plain li::marker { color: var(--red); }
       }
       dirty = true;
     });
-    const up = ev => { ptr.delete(ev.pointerId); pinch = 0; if (!ptr.size) canvas.classList.remove('drag'); };
+    const up = function (ev) { ptr.delete(ev.pointerId); pinch = 0; if (!ptr.size) canvas.classList.remove('drag'); };
     canvas.addEventListener('pointerup', up); canvas.addEventListener('pointercancel', up);
     canvas.addEventListener('wheel', function (ev) {
       ev.preventDefault(); cam.dist = Math.min(Math.max(cam.dist * Math.exp(ev.deltaY * 0.0012), 120), 7000); userDist = cam.dist; dirty = true;
@@ -559,8 +594,8 @@ ul.plain li::marker { color: var(--red); }
     $('v-iso').addEventListener('click', preset(-1.02, 1.36));
     $('v-under').addEventListener('click', preset(-1.0, 2.25));
     $('spin').addEventListener('click', () => setSpin(!spinning));
-    $('cut').addEventListener('change', ev => { view.cut = ev.target.checked; if (view.cut) setSpin(false); layout(); });
-    $('explode').addEventListener('input', ev => { view.explode = +ev.target.value; layout(); if (userDist === null) cam.dist = fit(); else fit(); });
+    $('cut').addEventListener('change', function (ev) { view.cut = ev.target.checked; if (view.cut) setSpin(false); layout(); });
+    $('explode').addEventListener('input', function (ev) { view.explode = +ev.target.value; layout(); if (userDist === null) cam.dist = fit(); else fit(); });
     new ResizeObserver(resize).observe(stage);
     matchMedia('(prefers-color-scheme: dark)').addEventListener('change', theme);
     new MutationObserver(theme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
@@ -570,6 +605,7 @@ ul.plain li::marker { color: var(--red); }
     requestAnimationFrame(tick);
     return { rebuild: function () { rebuild(); if (userDist === null) cam.dist = fit(); else fit(); }, frame: frame, setSpin: setSpin, cam: cam };
   }
+
 
   renderPanel();
   try {
