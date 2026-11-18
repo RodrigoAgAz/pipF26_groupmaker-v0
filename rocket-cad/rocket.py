@@ -7,7 +7,7 @@ the fan down into the tail, between the fins:
   - the intake ring gap now sits on the line where the red tail meets the checker
   - the exhaust duct below the fan is short, and the lower body is slightly fatter to hold the fan
   - above the intake is a power bay (speed controller), then the battery on a tray, then the
-    flight electronics, two forward camera ports in the nose and a GPS seat in the tip
+    flight electronics, with two forward camera ports and a GPS seat low in the nose (the tip is empty)
   - four steering vanes and their servo mounts hang below the tail
 
 Coordinates: Z up, Z=0 is the ground under the feet. All dimensions in mm.
@@ -417,12 +417,14 @@ def make_avionics():
 
 
 def make_gps_seat():
-    r = 21.0
-    d = vcyl(0, 0, 0, 2.0, r).cut(box(-13, 13, -13, 13, 1.0, 3.0)).cut(vcyl(0, 9, -1, 3, 2.5))
-    z = Z_J2
-    while ro(z) - W > r + 0.3:
-        z += 0.5
-    return d.translate((0, 0, z - 2.0)), z - 2.0
+    """GPS shelf low in the nose, just above the camera upright, so the tip itself stays empty."""
+    z0 = Z_AV + 60.0                               # clears the upright and the boards behind it
+    r = ro(z0 + 2.0) - W - 0.25                    # wedges in the tapering nose at this height
+    d = vcyl(0, 0, 0, 2.0, r).cut(box(-13, 13, -13, 13, 1.0, 3.0)).cut(vcyl(0, 16.5, -1, 3, 2.5))
+    for az in (45, 135, 225, 315):                 # lightening holes
+        x, y = polar(r - 9.0, az)
+        d = d.cut(vcyl(x, y, -1, 3, 5.5))
+    return d.translate((0, 0, z0)), z0
 
 
 def make_vane():
