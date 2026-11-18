@@ -392,37 +392,64 @@ def make_vane():
     return v.union(xcyl(0, Z_VANE, 3, ro(Z_VANE) + 9.0, 3.0))
 
 
-# ------------------------------------------------------------------ bought parts (shown in the viewer only)
-def ghosts():
-    g = {}
-    f = FAN
-    edf = vcyl(0, 0, Z_SEAT, Z_FTOP, f["od"] / 2).cut(vcyl(0, 0, Z_SEAT - 1, Z_FTOP + 1, f["id"] / 2))
-    hub = vcyl(0, 0, Z_SEAT - 28, Z_FTOP, f["hub"] / 2)
-    spin = (cq.Workplane("XZ").polyline([(0, Z_FTOP), (f["hub"] / 2, Z_FTOP), (0, Z_FTOP + 20)]).close()
-            .revolve(360, (0, 0, 0), (0, 1, 0)))
-    g["Ducted fan, 90 mm"] = edf.union(hub).union(spin)
-    bx, by, bz = BATTERY
+# ------------------------------------------------------------------ bought parts
+def component_layout():
+    """Where every bought part sits. Drives the collision check and the viewer's drawings.
+    Items under 'nose frame' are given facing +X and turned to FRONT_AZ."""
     zf = Z_GAP1 + 2.5
-    g["Battery, 6S"] = box(-bx / 2, bx / 2, -by / 2, by / 2, zf, zf + bz)
-    g["Speed controller"] = box(-19, 19, 30, 42, zf + 2, zf + 87)
-    g["Flight controller"] = box(FC_X - 18, FC_X + 18, -18, 18, Z_AV + 6, Z_AV + 14)
     px = CAM["plate_x"]
-    cams = None
-    for y in (-CAM["eye_y"], CAM["eye_y"]):
-        c = box(px - 9, px, y - 12.5, y + 12.5, Z_EYE - 12, Z_EYE + 12).union(xcyl(y, Z_EYE, px, px + 12, 4.0))
-        cams = c if cams is None else cams.union(c)
-    g["Stereo cameras"] = cams
-    g["Depth and companion board"] = box(px - 16, px - 11, -30, 30, Z_AV + 24, Z_AV + 54)
     _, zg = make_gps_seat()
-    g["GPS"] = box(-12.5, 12.5, -12.5, 12.5, zg + 1, zg + 9)
-    s = SERVO
-    servo = box(R_PO - s["above_ears"], R_PO - s["above_ears"] + s["depth"], -s["W"] / 2, s["W"] / 2,
-                Z_SC - s["L"] / 2, Z_SC + s["L"] / 2).union(xcyl(0, Z_VANE, R_PO - s["above_ears"] - 5, R_PO, 2.4))
+    return dict(
+        front_az=FRONT_AZ, wire_az=WIRE_AZ, vane_az=VANE_AZ, gap0=Z_GAP0, gap1=Z_GAP1, bay_floor=zf, z_av=Z_AV,
+        fan=dict(z0=Z_SEAT, z1=Z_FTOP, od=FAN["od"], id=FAN["id"], hub=FAN["hub"]),
+        battery=dict(sx=BATTERY[0], sy=BATTERY[1], sz=BATTERY[2], z0=zf),
+        esc=dict(x0=-19, x1=19, y0=30, y1=42, z0=zf + 2, z1=zf + 87),
+        pm=dict(x0=-12.5, x1=12.5, y0=-40, y1=-33, z0=zf + 5, z1=zf + 26),
+        # nose frame
+        fc=dict(x=FC_X, size=36, z0=Z_AV + 8.5, z1=Z_AV + 16),
+        rx=dict(x0=-20, x1=0, y0=24.5, y1=36.5, z0=Z_AV + 2.5, z1=Z_AV + 7.5),
+        cam=dict(px=px, wall=2.5, eye_y=CAM["eye_y"], z=Z_EYE),
+        depth=dict(x0=px - 16, x1=px - 11, y0=-30, y1=30, z0=Z_AV + 24, z1=Z_AV + 54),
+        rid=dict(x0=px - 23, x1=px - 19, y0=-15, y1=15, z0=Z_AV + 27, z1=Z_AV + 45),
+        gps=dict(z=zg + 2.0, size=25),
+        servo=dict(r_po=R_PO, z_c=Z_SC, z_vane=Z_VANE, **SERVO),
+    )
+
+
+def ghosts():
+    """Simple envelopes of the bought parts, in world position, for collision checking."""
+    L = component_layout()
+    front = lambda wp: rotz(wp, FRONT_AZ)
+    bx = lambda d: box(d["x0"], d["x1"], d["y0"], d["y1"], d["z0"], d["z1"])
+    g = {}
+    f = L["fan"]
+    edf = vcyl(0, 0, f["z0"], f["z1"], f["od"] / 2).cut(vcyl(0, 0, f["z0"] - 1, f["z1"] + 1, f["id"] / 2))
+    g["fan"] = edf.union(vcyl(0, 0, f["z0"] - 28, f["z1"] + 18, f["hub"] / 2))
+    b = L["battery"]
+    g["battery"] = box(-b["sx"] / 2, b["sx"] / 2, -b["sy"] / 2, b["sy"] / 2, b["z0"], b["z0"] + b["sz"])
+    g["esc"] = bx(L["esc"])
+    g["pm"] = bx(L["pm"])
+    c = L["fc"]
+    g["fc"] = front(box(c["x"] - 18, c["x"] + 18, -18, 18, c["z0"], c["z1"]))
+    g["rx"] = front(bx(L["rx"]))
+    k = L["cam"]
+    cams = None
+    for y in (-k["eye_y"], k["eye_y"]):
+        one = box(k["px"] - 4, k["px"], y - 12.5, y + 12.5, k["z"] - 12, k["z"] + 12).union(
+            xcyl(y, k["z"], k["px"], k["px"] + 13, 4.0))
+        cams = one if cams is None else cams.union(one)
+    g["cams"] = front(cams)
+    g["depth"] = front(bx(L["depth"]))
+    g["rid"] = front(bx(L["rid"]))
+    g["gpsmod"] = box(-12.5, 12.5, -12.5, 12.5, L["gps"]["z"], L["gps"]["z"] + 7)
+    s_ = SERVO
+    rt = R_PO - s_["above_ears"]
+    servo = box(rt, rt + s_["depth"], -s_["W"] / 2, s_["W"] / 2, Z_SC - s_["L"] / 2, Z_SC + s_["L"] / 2)
     sv = None
     for az in VANE_AZ:
-        r = rotz(servo, az)
-        sv = r if sv is None else sv.union(r)
-    g["Vane servos"] = sv
+        r_ = rotz(servo, az)
+        sv = r_ if sv is None else sv.union(r_)
+    g["servo"] = sv
     return g
 
 
@@ -580,10 +607,7 @@ def main():
     for n, wp in parts.items():
         cq.exporters.export(wp, os.path.join(out, "step", n + ".step"))
 
-    # ---- viewer: exact meshes of every printed part, plus the bought parts
-    G = ghosts()
-    for k in ("Stereo cameras", "Depth and companion board", "Flight controller"):
-        G[k] = front(G[k])
+    # ---- viewer: exact meshes of every printed part (bought parts are drawn by the page from the layout)
     items = [
         ("nose", "Nose", nose, RED, 4.0, None), ("gps", "GPS seat", gps, GREY, 4.6, None),
         ("cpl", "Nose shoulder ring", cpl, GREY, 3.5, None), ("avio", "Avionics plate", avio, GREY, 3.2, None),
@@ -598,10 +622,6 @@ def main():
                   ("foot", "Foot pad", rotz(foot, az), DARK, -0.25, az)]
     for az in VANE_AZ:
         items.append(("vane", "Steering vane", rotz(vane, az), GREY, -0.5, None))
-    glevel = {"Ducted fan, 90 mm": 1.1, "Battery, 6S": 2.9, "Speed controller": 2.9, "Flight controller": 3.3,
-              "Stereo cameras": 3.3, "Depth and companion board": 3.3, "GPS": 4.7, "Vane servos": 0.0}
-    for name, wp in G.items():
-        items.append(("ghost", name, wp, BLUE, glevel[name], None))
     blob, man = bytearray(), []
     for key, label, wp, col, lvl, az in items:
         if wp is None:
@@ -619,6 +639,7 @@ def main():
         H=H, D=2 * R, stance=P["STANCE"], ratio=round(H / (2 * R), 2), fsa=round(fsa),
         exit_area=round(math.pi * exit_r ** 2), exit_pct=round(100 * math.pi * exit_r ** 2 / fsa),
         intake_pct=round(100 * intake / fsa), printed=round(total), printed_light=round(light),
+        layout=component_layout(),
         rows=[dict(key=r["key"], name=r["name"], qty=r["qty"], g=round(r["g"], 1), tall=round(r["tall"]),
                    file=r["file"], light=r["light"]) for r in rows],
         stations=[[round(H), "Nose tip"], [round(z_gps), "GPS seat"], [round(Z_EYE), "Camera ports, facing forward"],

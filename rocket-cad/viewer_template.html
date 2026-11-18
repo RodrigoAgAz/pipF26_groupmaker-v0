@@ -52,13 +52,19 @@ h3 { font-family: var(--f-mono); font-weight: 500; font-size: 11.5px; letter-spa
 .lede { color: var(--ink-soft); max-width: 68ch; margin: 0; }
 
 .bench { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); gap: 18px; align-items: stretch; }
-.stage { position: relative; background: var(--sky); border: 2.5px solid var(--ink); min-height: min(84vh, 780px); overflow: hidden; }
+.stage { position: relative; background: var(--sky); border: 2.5px solid var(--ink); min-height: min(86vh, 800px); overflow: hidden; }
 .stage canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
 .stage canvas.drag { cursor: grabbing; }
 .caption { position: absolute; left: 0; top: 0; background: var(--panel); color: var(--ink); border-right: 2.5px solid var(--ink); border-bottom: 2.5px solid var(--ink); padding: 5px 10px; font: 500 12.5px var(--f-mono); font-variant-numeric: tabular-nums; }
-.hint { position: absolute; left: 10px; bottom: 9px; font: 500 11.5px var(--f-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink); background: var(--panel); border: 1.5px solid var(--ink); padding: 3px 8px; pointer-events: none; }
 .views { position: absolute; right: 9px; top: 9px; display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; max-width: 64%; }
 .fallback { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; color: var(--ink); }
+/* the speech-box that names whatever was clicked */
+.box.card { position: relative; gap: 3px; padding-right: 38px; min-height: 148px; background: var(--pick); }
+.card .kick { font: 500 11px var(--f-mono); letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-soft); }
+.card strong { font: 600 19px var(--f-display); line-height: 1.2; }
+.card p { margin: 2px 0 0; font-size: 14px; line-height: 1.45; }
+.card button { position: absolute; right: 6px; top: 6px; border: 0; background: none; padding: 2px 7px; font-size: 18px; line-height: 1; }
+.hint { position: absolute; left: 10px; bottom: 9px; font: 500 11.5px var(--f-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink); background: var(--panel); border: 1.5px solid var(--ink); padding: 3px 8px; pointer-events: none; }
 
 button, .seg label { font: 600 13px var(--f-body); color: var(--ink); background: var(--panel); border: 1.5px solid var(--ink); padding: 6px 11px; cursor: pointer; }
 button:hover, .seg label:hover { background: var(--hair); }
@@ -102,13 +108,13 @@ td.f { font: 12.5px var(--f-mono); color: var(--ink-soft); overflow-wrap: anywhe
 tbody.pick tr { cursor: pointer; }
 tbody.pick tr:hover td { background: var(--hair); }
 tbody.pick tr[aria-selected="true"] td { background: var(--pick); }
-tbody.pick td:first-child { padding-left: 8px; }
+tbody.pick td:first-child, table.picks th:first-child, table.picks tfoot td:first-child { padding-left: 8px; }
 tfoot td { font-weight: 600; border-bottom: 0; border-top: 1.5px solid var(--ink); }
 ul.plain { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 8px; max-width: 62ch; }
 ul.plain li::marker { color: var(--red); }
 @media (max-width: 860px) {
   .bench, .cols { grid-template-columns: minmax(0, 1fr); }
-  .stage { height: 66vh; min-height: 420px; }
+  .stage { height: 72vh; min-height: 460px; }
   .views { top: 40px; max-width: none; }
 }
 </style>
@@ -117,12 +123,12 @@ ul.plain li::marker { color: var(--red); }
   <header>
     <div class="checks" aria-hidden="true"></div>
     <h1>Checker rocket, rev D</h1>
-    <p class="lede">The hovering version: a 90 mm ducted fan inside the traced shape, steered by four vanes in its exhaust, with forward cameras in the nose and GPS in the tip. Drag the model to turn it, open it up, and try the hover calculator.</p>
+    <p class="lede">The hovering version: a 90 mm ducted fan inside the traced shape, steered by four vanes in its exhaust, with forward cameras in the nose and GPS in the tip. Click any part, inside or out, to see what it is.</p>
   </header>
 
   <section class="bench">
     <div class="stage" id="stage">
-      <canvas id="view" aria-label="3D model of the rocket. Drag to rotate, scroll or pinch to zoom."></canvas>
+      <canvas id="view" aria-label="3D model of the rocket. Drag to rotate, scroll or pinch to zoom, click a part to identify it."></canvas>
       <div class="caption" id="caption"></div>
       <div class="views">
         <button type="button" id="v-front">Front</button>
@@ -131,15 +137,22 @@ ul.plain li::marker { color: var(--red); }
         <button type="button" id="v-under">Underside</button>
         <button type="button" id="spin" aria-pressed="false">Turntable</button>
       </div>
-      <span class="hint">Drag to turn &middot; scroll or pinch to zoom</span>
-      <div class="fallback" id="fallback" hidden>This browser could not start WebGL, so the 3D view is unavailable. The calculator and tables still work.</div>
+      <span class="hint">Drag to turn &middot; scroll or pinch to zoom &middot; click a part</span>
+      <div class="fallback" id="fallback" hidden>This browser could not start WebGL, so the 3D view is unavailable. The lists and calculator still work.</div>
     </div>
 
     <div class="side">
+      <div class="box card" id="card" aria-live="polite">
+        <button type="button" id="card-x" aria-label="Clear selection" hidden>&times;</button>
+        <span class="kick" id="card-k"></span><strong id="card-t"></strong><p id="card-b"></p>
+      </div>
       <div class="box">
-        <h3>Look inside</h3>
-        <label class="check" for="cut"><input type="checkbox" id="cut">Cutaway</label>
-        <label class="check" for="gear"><input type="checkbox" id="gear">Show fan, battery and electronics</label>
+        <h3 id="mode-h">Look inside</h3>
+        <div class="seg" role="radiogroup" aria-labelledby="mode-h">
+          <input type="radio" name="mode" id="mode-out" value="out" checked><label for="mode-out">Outside</label>
+          <input type="radio" name="mode" id="mode-cut" value="cut"><label for="mode-cut">Cutaway</label>
+          <input type="radio" name="mode" id="mode-xray" value="xray"><label for="mode-xray">See-through</label>
+        </div>
         <div class="ctl"><div class="row"><label for="explode">Pull the parts apart</label></div>
           <input type="range" id="explode" min="0" max="100" step="1" value="0"></div>
       </div>
@@ -155,10 +168,9 @@ ul.plain li::marker { color: var(--red); }
             <input type="radio" name="mat" id="mat-pla" value="pla" checked><label for="mat-pla">Standard PLA</label>
             <input type="radio" name="mat" id="mat-lw" value="lw"><label for="mat-lw">Foaming light PLA</label>
           </div></div>
-        <label class="check" for="vision"><input type="checkbox" id="vision" checked>Carry the cameras and depth computer</label>
+        <label class="check" for="vision"><input type="checkbox" id="vision" checked>Carry the cameras and depth board</label>
         <div class="verdict" id="verdict"><b id="tw"></b><span id="tw-note"></span></div>
         <dl class="figs" id="figs"></dl>
-        <p class="fine" id="breakdown"></p>
         <p class="fine">Estimates. They assume the fan loses about a fifth of its bench thrust once it is inside the body, and that the drive turns about 60% of battery power into airflow.</p>
       </div>
     </div>
@@ -166,22 +178,24 @@ ul.plain li::marker { color: var(--red); }
 
   <section class="cols">
     <div class="block">
-      <h2>Print schedule</h2>
-      <p class="fine">Select a row to light up that part in the model.</p>
+      <h2>Printed parts</h2>
+      <p class="fine">Select a row to find that part in the model.</p>
       <div class="tablewrap">
-        <table class="wide">
+        <table class="wide picks">
           <thead><tr><th>Part</th><th class="n">Qty</th><th class="n">g each</th><th class="n">Print height</th><th>File</th></tr></thead>
           <tbody id="rows" class="pick"></tbody>
-          <tfoot><tr><td>Printed total, standard PLA</td><td></td><td class="n" id="total"></td><td></td><td class="f">from CAD volume</td></tr></tfoot>
+          <tfoot><tr><td>Printed total</td><td></td><td class="n" id="total"></td><td></td><td class="f" id="total-note"></td></tr></tfoot>
         </table>
       </div>
     </div>
     <div class="block">
-      <h2>Stations above ground</h2>
+      <h2>Bought parts</h2>
+      <p class="fine">Everything that goes in, with typical weights.</p>
       <div class="tablewrap">
-        <table>
-          <thead><tr><th class="n">mm</th><th>What is there</th></tr></thead>
-          <tbody id="stations"></tbody>
+        <table class="picks">
+          <thead><tr><th>Part</th><th class="n">Qty</th><th class="n">g each</th></tr></thead>
+          <tbody id="bought" class="pick"></tbody>
+          <tfoot><tr><td>Bought total</td><td></td><td class="n" id="bought-total"></td></tr></tfoot>
         </table>
       </div>
     </div>
@@ -203,7 +217,7 @@ ul.plain li::marker { color: var(--red); }
       <ul class="plain">
         <li>The fan seat assumes a 98 mm housing, 80 mm long, and nothing stops the fan turning in its seat.</li>
         <li>The servo mounts fit 9 g class servos. Whether those are strong enough for the vanes is untested.</li>
-        <li>The camera upright fits small 25 mm camera boards 50 mm apart. A full-size single-board computer does not fit in the nose.</li>
+        <li>The bought parts are drawn at typical sizes, not from the exact models you will buy.</li>
         <li>The legs are thin hollow prints held by three screws each. Expect to replace one after a hard landing.</li>
         <li>Nothing has been sliced, printed or flown.</li>
       </ul>
@@ -217,37 +231,86 @@ ul.plain li::marker { color: var(--red); }
 <script>
 (function () {
   'use strict';
-  const DATA = JSON.parse(document.getElementById('manifest').textContent), M0 = DATA.meta;
+  const DATA = JSON.parse(document.getElementById('manifest').textContent), M0 = DATA.meta, L = M0.layout;
   const $ = id => document.getElementById(id);
   const fmt = (v, n) => v.toFixed(n === undefined ? 0 : n);
-  const view = { cut: false, gear: false, explode: 0, pick: null };
+  const view = { mode: 'out', explode: 0, pick: null };
   let three = null;
 
-  // ---------------------------------------------------------------- tables
+  // ---------------------------------------------------------------- what everything is
+  const PRINTED = {
+    nose: 'The red nose cone. It lifts off for access, has two small ports for the cameras to look through, and holds the GPS in its tip.',
+    upper: 'The upper body and battery bay. The battery straps to its floor with the speed controller beside it. That floor is also the roof of the air intake.',
+    fring: 'Holds the top of the fan and stops it lifting under its own thrust. The four struts on top carry the upper body and leave the ring gap the fan breathes through.',
+    tail: 'The lower body, which is also the fan’s exhaust duct. The fan sits on a ledge near its top and the three legs screw to its outside.',
+    vring: 'The nozzle at the very bottom. It carries the four steering vanes and a bracket for each of their servos.',
+    leg_up: 'The upper half of a leg: the fin blade. Three screws hold it to the tail duct and two pins line it up with the lower half.',
+    leg_lo: 'The lower half of a leg, ending in the pod. It prints hollow to stay light, and it takes the landing.',
+    vane: 'One of four flat blades in the fan’s exhaust. A servo turns each one to deflect the air, which is how the rocket steers.',
+    avio: 'A drop-in plate above the battery. The flight controller sits on it and the two cameras mount on its upright.',
+    cpl: 'A ring glued into the nose that slides into the upper body, so the nose seats squarely and still comes off.',
+    gps: 'A small disc that wedges into the tip of the nose and carries the GPS module.',
+    foot: 'A soft pad under each pod, printed in flexible plastic to take the knock of landing.',
+  };
+  const BOUGHT = [
+    { id: 'fan', name: 'Ducted fan, 90 mm', qty: 1, g: 400, text: 'A many-bladed rotor on a brushless motor, spinning inside a duct. It makes all the thrust: about 4 kg on the bench with this battery.' },
+    { id: 'battery', name: 'Battery, 6S lithium polymer', qty: 1, g: 0, text: 'Six cells in series, about 22 volts. It is the heaviest single item on board and gives three to four minutes of hover.' },
+    { id: 'esc', name: 'Speed controller', qty: 1, g: 100, text: 'Turns battery power into the three-phase drive for the fan motor, as told by the flight controller. It should be rated for about 120 amps.' },
+    { id: 'pm', name: 'Power module', qty: 1, g: 20, text: 'Measures battery voltage and current, and supplies a steady 5 volts to the flight controller and servos.' },
+    { id: 'fc', name: 'Flight controller', qty: 1, g: 15, text: 'The autopilot. It senses tilt and rotation hundreds of times a second and moves the vanes and fan to keep the rocket upright and on course.' },
+    { id: 'gpsmod', name: 'GPS and compass', qty: 1, g: 25, text: 'Tells the flight controller where the rocket is and which way it faces. It sits in the tip for a clear view of the sky.' },
+    { id: 'rx', name: 'Radio receiver', qty: 1, g: 10, text: 'Carries commands from your handheld transmitter, so you can take over at any moment.' },
+    { id: 'rid', name: 'Remote ID module', qty: 1, g: 15, text: 'Broadcasts the craft’s identity and position. US rules require one on a craft this size.' },
+    { id: 'servo', name: 'Vane servo', qty: 4, g: 12, text: 'One small servo per vane. Each turns its vane a few degrees on command from the flight controller.' },
+    { id: 'cams', name: 'Stereo cameras', qty: 2, g: 10, vision: true, text: 'Two matched cameras 50 mm apart. Comparing their views gives the distance to whatever is ahead.' },
+    { id: 'depth', name: 'Depth and companion board', qty: 1, g: 100, vision: true, text: 'Turns the two camera views into distances and tells the flight controller where the obstacles are.' },
+    { id: 'wiring', name: 'Power and motor leads', qty: 1, g: 95, text: 'The heavy leads from battery to speed controller to fan, with the main connector. Thin servo and signal wires are not drawn.' },
+    { id: 'fasteners', name: 'Screws and threaded inserts', qty: 1, g: 32, nodraw: true, text: 'M3 screws and heat-set inserts for the legs and struts, plus small screws for the servos and boards. Not drawn in the model.' },
+  ];
+  const BY = {}; BOUGHT.forEach(b => { BY[b.id] = b; });
+  const ROW = {}; M0.rows.forEach(r => { ROW[r.key] = r; });
+  const INSIDE = { avio: 1, cpl: 1, gps: 1, fan: 1, battery: 1, esc: 1, pm: 1, fc: 1, gpsmod: 1, rx: 1, rid: 1, cams: 1, depth: 1, wiring: 1 };
+
   $('caption').textContent = M0.H + ' × ⌀' + M0.D + ' mm  ·  ' + fmt(M0.ratio, 1) + ' : 1';
-  $('rows').innerHTML = M0.rows.map(r => '<tr data-key="' + r.key + '" tabindex="0" aria-selected="false"><td>' + r.name + '</td><td class="n">' + r.qty +
-    '</td><td class="n">' + fmt(r.g, 1) + '</td><td class="n">' + r.tall + ' mm</td><td class="f">' + r.file + '</td></tr>').join('');
-  $('total').textContent = M0.printed + ' g';
-  $('stations').innerHTML = M0.stations.map(s => '<tr><td class="n">' + s[0] + '</td><td>' + s[1] + '</td></tr>').join('');
-  function pick(key) {
-    view.pick = view.pick === key ? null : key;
-    document.querySelectorAll('#rows tr').forEach(tr => tr.setAttribute('aria-selected', tr.dataset.key === view.pick ? 'true' : 'false'));
+  $('rows').innerHTML = M0.rows.map(r => '<tr data-id="' + r.key + '" tabindex="0" aria-selected="false"><td>' + r.name + '</td><td class="n">' + r.qty +
+    '</td><td class="n" data-g="' + r.key + '"></td><td class="n">' + r.tall + ' mm</td><td class="f">' + r.file + '</td></tr>').join('');
+  $('bought').innerHTML = BOUGHT.map(b => '<tr data-id="' + b.id + '" tabindex="0" aria-selected="false"><td>' + b.name + '</td><td class="n">' + b.qty +
+    '</td><td class="n" data-g="' + b.id + '"></td></tr>').join('');
+
+  function describe(id) {
+    if (ROW[id]) { const r = ROW[id]; return { kick: 'Printed part · ' + (r.qty > 1 ? r.qty + ' × ' : '') + fmt(massOf(id), 0) + ' g · ' + r.file, title: r.name, text: PRINTED[id] }; }
+    const b = BY[id]; return { kick: 'Bought part · ' + (b.qty > 1 ? b.qty + ' × ' : '') + 'about ' + fmt(massOf(id), 0) + ' g', title: b.name, text: b.text };
+  }
+  function select(id, fromList) {
+    view.pick = (id && id === view.pick && !fromList) ? null : id;
+    if (view.pick && fromList && INSIDE[view.pick] && view.mode === 'out' && view.explode === 0) setMode('xray');
+    document.querySelectorAll('tbody.pick tr').forEach(tr => tr.setAttribute('aria-selected', tr.dataset.id === view.pick ? 'true' : 'false'));
+    renderCard();
     if (three) three.layout();
   }
-  document.querySelectorAll('#rows tr').forEach(function (tr) {
-    tr.addEventListener('click', () => pick(tr.dataset.key));
-    tr.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); pick(tr.dataset.key); } });
+  function renderCard() {
+    const d = view.pick ? describe(view.pick) : { kick: 'What is this?', title: 'Click any part', text: 'Click a part of the rocket, or a row in the lists below, to see what it is and what it does. Use Cutaway or See-through to reach the parts inside.' };
+    $('card-k').textContent = d.kick; $('card-t').textContent = d.title; $('card-b').textContent = d.text; $('card-x').hidden = !view.pick;
+  }
+  function setMode(m) { view.mode = m; $('mode-' + m).checked = true; if (three) three.modeChanged(); }
+  document.querySelectorAll('tbody.pick tr').forEach(function (tr) {
+    tr.addEventListener('click', () => select(tr.dataset.id, true));
+    tr.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); select(tr.dataset.id, true); } });
   });
+  $('card-x').addEventListener('click', () => select(null));
+  document.querySelectorAll('input[name="mode"]').forEach(i => i.addEventListener('change', ev => setMode(ev.target.value)));
 
   // ---------------------------------------------------------------- hover calculator
-  const FIXED = { 'fan': 400, 'speed controller': 100, 'flight controller, GPS, radio': 90, 'servos': 50, 'wiring and fasteners': 120 };
-  const VISION = 120, LOSS = 0.8, DRIVE = 0.6, VOLT = 22.2, G_PER_MAH = 0.135, LW = 0.55;
+  const LOSS = 0.8, DRIVE = 0.6, VOLT = 22.2, G_PER_MAH = 0.135, LW = 0.55;
+  function massOf(id) {
+    if (ROW[id]) return ROW[id].g * (ROW[id].light && $('mat-lw').checked ? LW : 1);
+    return id === 'battery' ? +$('cap').value * G_PER_MAH : BY[id].g;
+  }
   function calc() {
-    const thrust = +$('thrust').value, cap = +$('cap').value, lw = $('mat-lw').checked, vision = $('vision').checked;
-    const printed = lw ? M0.printed - M0.printed_light * (1 - LW) : M0.printed;
-    const gear = Object.keys(FIXED).reduce((a, k) => a + FIXED[k], 0), batt = cap * G_PER_MAH;
-    const mass = printed + gear + batt + (vision ? VISION : 0);
-    const installed = thrust * LOSS, tw = installed * 1000 / mass;
+    const thrust = +$('thrust').value, cap = +$('cap').value, vision = $('vision').checked;
+    const printed = M0.rows.reduce((a, r) => a + massOf(r.key) * r.qty, 0);
+    const bought = BOUGHT.reduce((a, b) => a + (b.vision && !vision ? 0 : massOf(b.id) * b.qty), 0);
+    const mass = printed + bought, installed = thrust * LOSS, tw = installed * 1000 / mass;
     const free = mass / 1000 * 9.81 / LOSS;                                   // thrust the fan must make in free air, N
     const power = Math.pow(free, 1.5) / (2 * Math.sqrt(1.2 * M0.fsa * 1e-6)) / DRIVE;
     const minutes = cap / 1000 * VOLT * 0.8 / power * 60;
@@ -259,12 +322,17 @@ ul.plain li::marker { color: var(--red); }
     const cell = (t, val, u) => '<div><dt>' + t + '</dt><dd>' + val + '<small>' + u + '</small></dd></div>';
     $('figs').innerHTML = cell('All-up mass', fmt(mass / 1000, 2), 'kg') + cell('Thrust in the body', fmt(installed, 1), 'kg') +
       cell('Hover time', fmt(minutes, 1), 'min') + cell('Hover current', fmt(power / VOLT), 'A');
-    $('breakdown').textContent = 'Printed parts ' + fmt(printed) + ' g, battery ' + fmt(batt) + ' g, fan and electronics ' + gear + ' g' +
-      (vision ? ', cameras and depth computer ' + VISION + ' g.' : '.');
+    document.querySelectorAll('[data-g]').forEach(function (td) {
+      const id = td.dataset.g, off = BY[id] && BY[id].vision && !vision;
+      td.textContent = off ? 'left out' : fmt(massOf(id), ROW[id] ? 1 : 0);
+    });
+    $('total').textContent = fmt(printed) + ' g'; $('total-note').textContent = $('mat-lw').checked ? 'skins and legs in light PLA' : 'standard PLA, from CAD volume';
+    $('bought-total').textContent = fmt(bought) + ' g';
+    if (view.pick) renderCard();
   }
   ['thrust', 'cap'].forEach(id => $(id).addEventListener('input', calc));
   ['mat-pla', 'mat-lw', 'vision'].forEach(id => $(id).addEventListener('change', calc));
-  calc();
+  calc(); renderCard();
 
   // ---------------------------------------------------------------- 3D
   function start3D() {
@@ -275,8 +343,8 @@ ul.plain li::marker { color: var(--red); }
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(26, 1, 10, 9000);
     camera.up.set(0, 0, 1); scene.add(camera);
-    scene.add(new THREE.AmbientLight(0xffffff, 0.05));
-    const sun = new THREE.DirectionalLight(0xffffff, 0.42); sun.position.set(-0.9, 0.7, 1.0); camera.add(sun);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.16));
+    const sun = new THREE.DirectionalLight(0xffffff, 0.5); sun.position.set(-0.9, 0.7, 1.0); camera.add(sun);
 
     // studio surroundings: never drawn, only reflected in the lacquer
     (function () {
@@ -300,7 +368,7 @@ ul.plain li::marker { color: var(--red); }
         const a = idx[t * 3] * 3, b = idx[t * 3 + 1] * 3, c = idx[t * 3 + 2] * 3;
         const ux = pos[b] - pos[a], uy = pos[b + 1] - pos[a + 1], uz = pos[b + 2] - pos[a + 2];
         const vx = pos[c] - pos[a], vy = pos[c + 1] - pos[a + 1], vz = pos[c + 2] - pos[a + 2];
-        fn[t * 3] = uy * vz - uz * vy; fn[t * 3 + 1] = uz * vx - ux * vz; fn[t * 3 + 2] = ux * vy - uy * vx;   // length = 2 x area
+        fn[t * 3] = uy * vz - uz * vy; fn[t * 3 + 1] = uz * vx - ux * vz; fn[t * 3 + 2] = ux * vy - uy * vx;
         for (let k = 0; k < 3; k++) { const id = key(idx[t * 3 + k]); let l = at.get(id); if (!l) { l = []; at.set(id, l); } l.push(t); }
       }
       const COS = Math.cos(38 * Math.PI / 180);
@@ -321,22 +389,196 @@ ul.plain li::marker { color: var(--red); }
       g.setAttribute('position', new THREE.BufferAttribute(out, 3)); g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
       return g;
     }
+
     const lin = v => Math.pow(v, 2.2);
     const cutPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+    const SHELL = { nose: 1, upper: 1, fring: 1, tail: 1, vring: 1 };
+    const things = [];          // every selectable thing: { id, node, mats, level, az, shell }
+    const pickable = [];
+
+    // ---- printed parts: exact CAD meshes
     const bin = Uint8Array.from(atob(document.getElementById('meshdata').textContent.trim()), c => c.charCodeAt(0));
-    const ground = { mat: new THREE.MeshBasicMaterial({ color: 0xecd592 }), grid: new THREE.LineBasicMaterial({ color: 0xc9ae5e }) };
-    const parts = [];
     DATA.parts.forEach(function (p) {
       const g = smooth(new Float32Array(bin.buffer.slice(p.voff, p.voff + p.vn * 12)), new Uint32Array(bin.buffer.slice(p.toff, p.toff + p.tn * 12)));
-      const ghost = p.key === 'ghost', col = new THREE.Color(lin(p.color[0]), lin(p.color[1]), lin(p.color[2]));
-      const glossy = !ghost && (p.color[0] > 0.8);          // red and white skins get the lacquer; grey parts stay matte
+      const col = new THREE.Color(lin(p.color[0]), lin(p.color[1]), lin(p.color[2])), glossy = p.color[0] > 0.8;
       const mat = glossy
         ? new THREE.MeshPhysicalMaterial({ color: col, roughness: 0.36, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.05, side: THREE.DoubleSide })
-        : new THREE.MeshStandardMaterial({ color: col, roughness: 0.7, metalness: 0, side: THREE.DoubleSide, transparent: ghost, opacity: ghost ? 0.88 : 1 });
+        : new THREE.MeshStandardMaterial({ color: col, roughness: 0.7, metalness: 0, side: THREE.DoubleSide });
       const mesh = new THREE.Mesh(g, mat);
-      scene.add(mesh);
-      parts.push({ p: p, mesh: mesh, ghost: ghost });
+      mesh.userData = { id: p.key, clip: true, shell: !!SHELL[p.key] };
+      scene.add(mesh); pickable.push(mesh);
+      things.push({ id: p.key, node: mesh, mats: [mat], level: p.level, az: p.az, shell: !!SHELL[p.key], clipMats: [mat] });
     });
+
+    // ---- bought parts: drawn here from the CAD layout, at typical sizes
+    function thing(id, level) {
+      const t = { id: id, node: new THREE.Group(), mats: [], clipMats: [], level: level, az: null, shell: false };
+      t.mk = function (hex, o) { const m = new THREE.MeshStandardMaterial(Object.assign({ color: hex, roughness: 0.6, metalness: 0, side: THREE.DoubleSide }, o || {})); m.color.convertSRGBToLinear(); t.mats.push(m); return m; };
+      t.add = function (mesh, parent) { mesh.userData = { id: id, clip: false, shell: false }; (parent || t.node).add(mesh); pickable.push(mesh); return mesh; };
+      scene.add(t.node); things.push(t); return t;
+    }
+    const bx = function (sx, sy, sz, m, x, y, z) { const me = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), m); me.position.set(x, y, z); return me; };
+    const cy = function (r, h, m, x, y, z, axis, seg) {
+      const g = new THREE.CylinderGeometry(r, r, h, seg || 24);
+      if (axis === 'z') g.rotateX(Math.PI / 2); else if (axis === 'x') g.rotateZ(Math.PI / 2);
+      const me = new THREE.Mesh(g, m); me.position.set(x, y, z); return me;
+    };
+    const cone = function (r, h, m, z, up) { const g = new THREE.ConeGeometry(r, h, 28); g.rotateX(up ? Math.PI / 2 : -Math.PI / 2); const me = new THREE.Mesh(g, m); me.position.set(0, 0, z); return me; };
+    const wire = function (pts, r, m) { return new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts.map(p => new THREE.Vector3(p[0], p[1], p[2]))), 28, r, 7), m); };
+    const polar = (r, az, z) => [r * Math.cos(az * Math.PI / 180), r * Math.sin(az * Math.PI / 180), z];
+    const facing = function (t) { const g = new THREE.Group(); g.rotation.z = L.front_az * Math.PI / 180; t.node.add(g); return g; };   // nose items are laid out facing +X
+
+    (function fan() {
+      const t = thing('fan', 1.1), f = L.fan, zr = f.z1 - 14;
+      const shroud = t.mk(0x1f2126, { roughness: 0.4 }), dark = t.mk(0x26282d, { roughness: 0.45 }), blade = t.mk(0xdfe2e6, { roughness: 0.45 });
+      const can = t.mk(0x2f5fb8, { metalness: 0.55, roughness: 0.35 }), alu = t.mk(0xa9b0b8, { metalness: 0.7, roughness: 0.35 });
+      t.clipMats.push(shroud);
+      const sg = new THREE.LatheGeometry([[f.id / 2, f.z0], [f.od / 2, f.z0], [f.od / 2, f.z1], [f.id / 2, f.z1], [f.id / 2, f.z0]].map(p => new THREE.Vector2(p[0], p[1])), 56);
+      sg.rotateX(Math.PI / 2);
+      const sm = t.add(new THREE.Mesh(sg, shroud)); sm.userData.clip = true;
+      t.add(cy(17, zr - 8 - (f.z0 - 22), can, 0, 0, (zr - 8 + f.z0 - 22) / 2, 'z'));              // motor
+      t.add(cone(17, 16, alu, f.z0 - 30, false));
+      for (let k = 0; k < 5; k++) {                                                             // stator vanes
+        const h = new THREE.Group(); h.rotation.z = (k * 72 + 20) * Math.PI / 180; h.position.z = f.z0 + 24; t.node.add(h);
+        t.add(bx(f.id / 2 - 17, 2, 30, dark, 17 + (f.id / 2 - 17) / 2, 0, 0), h);
+      }
+      t.add(cy(f.hub / 2, 15, dark, 0, 0, zr, 'z'));                                             // rotor hub
+      const len = f.id / 2 - 1.2 - f.hub / 2;
+      for (let k = 0; k < 12; k++) {                                                            // rotor blades
+        const h = new THREE.Group(); h.rotation.z = k * 30 * Math.PI / 180; h.position.z = zr; t.node.add(h);
+        const b = bx(len, 1.3, 16, blade, f.hub / 2 + len / 2, 0, 0); b.rotation.x = 0.62; t.add(b, h);
+      }
+      t.add(cone(f.hub / 2, 24, dark, zr + 7.5 + 12, true));                                     // spinner
+    })();
+
+    (function battery() {
+      const t = thing('battery', 2.9), b = L.battery, zc = b.z0 + b.sz / 2, top = b.z0 + b.sz;
+      const wrap = t.mk(0x1d2025, { roughness: 0.5 }), label = t.mk(0xf0b21c, { roughness: 0.55 }), band = t.mk(0x111214), white = t.mk(0xf1f1ee);
+      t.add(bx(b.sx, b.sy, b.sz, wrap, 0, 0, zc));
+      t.add(bx(b.sx + 0.8, b.sy + 0.8, b.sz * 0.42, label, 0, 0, zc + 6));
+      t.add(bx(b.sx + 1.2, b.sy + 1.2, 7, band, 0, 0, zc + 6 + b.sz * 0.21 - 12));
+      t.add(bx(b.sx + 1.2, b.sy + 1.2, 3, band, 0, 0, zc + 6 - b.sz * 0.21 + 8));
+      t.add(bx(14, 5, 7, white, 12, 16, top + 3.5));                                             // balance plug
+    })();
+
+    (function esc() {
+      const t = thing('esc', 2.9), e = L.esc, xc = (e.x0 + e.x1) / 2, yc = (e.y0 + e.y1) / 2, zc = (e.z0 + e.z1) / 2;
+      const shrink = t.mk(0x16181c, { roughness: 0.55 }), alu = t.mk(0xb6bcc4, { metalness: 0.75, roughness: 0.3 }), cap = t.mk(0x2b2f38), stripe = t.mk(0xd8261c);
+      t.add(bx(e.x1 - e.x0, e.y1 - e.y0 - 4, e.z1 - e.z0, shrink, xc, yc - 2, zc));
+      t.add(bx(e.x1 - e.x0 - 4, 1.6, e.z1 - e.z0 - 16, alu, xc, e.y1 - 3.2, zc));                // heat sink base
+      for (let k = 0; k < 9; k++) t.add(bx(e.x1 - e.x0 - 4, 3.2, 1.3, alu, xc, e.y1 - 1.2, e.z0 + 12 + k * (e.z1 - e.z0 - 24) / 8));
+      t.add(bx(e.x1 - e.x0 + 0.6, 0.6, 10, stripe, xc, e.y0 - 0.1, zc + 14));
+      t.add(cy(5, 18, cap, xc - 8, yc - 2, e.z1 + 9, 'z')); t.add(cy(5, 18, cap, xc + 8, yc - 2, e.z1 + 9, 'z'));   // capacitors
+    })();
+
+    (function powerModule() {
+      const t = thing('pm', 2.9), p = L.pm, xc = (p.x0 + p.x1) / 2, yc = (p.y0 + p.y1) / 2, zc = (p.z0 + p.z1) / 2;
+      const pcb = t.mk(0x8a1f1f, { roughness: 0.5 }), alu = t.mk(0xc5cad0, { metalness: 0.7, roughness: 0.3 }), chip = t.mk(0x1b1c1f), cream = t.mk(0xe9e3cf);
+      t.add(bx(p.x1 - p.x0, 1.6, p.z1 - p.z0, pcb, xc, yc, zc));
+      t.add(bx(11, 3, 6, alu, xc, yc + 2.2, zc + 3));                                            // current shunt
+      t.add(bx(6, 2, 6, chip, xc - 6, yc + 1.6, zc - 5)); t.add(bx(8, 3.4, 4, cream, xc + 6, yc + 2.4, zc - 6));
+    })();
+
+    (function wiring() {
+      const t = thing('wiring', 1.9), e = L.esc, p = L.pm, b = L.battery, f = L.fan, top = b.z0 + b.sz, zf = L.bay_floor;
+      const red = t.mk(0xc81e1e, { roughness: 0.55 }), black = t.mk(0x18191c, { roughness: 0.55 }), blue = t.mk(0x23408f, { roughness: 0.55 }), yellow = t.mk(0xf2c31b, { roughness: 0.5 });
+      [-1, 1].forEach(function (s) {                                                              // battery to power module
+        const m = s < 0 ? red : black, x = s * 5;
+        t.add(wire([[x, -12, top], [x, -22, top + 10], [x, -33, top + 4], [x, -36.5, top - 30], [x, -36.5, p.z1 + 26]], 2.4, m));
+        t.add(wire([[x, -36.5, p.z1 + 12], [x, -36.5, p.z1 - 2]], 2.4, m));
+        t.add(wire([[x, -36.5, p.z0 + 3], [18 + x, -34, zf + 4], [36 + x * 0.5, -10, zf + 4], [33 + x * 0.5, 22, zf + 4], [10 + x, 33, zf + 5], [x * 1.6, 34, e.z0 + 6]], 2.4, m));   // on to the speed controller
+      });
+      t.add(bx(22, 9, 15, yellow, 0, -36.5, p.z1 + 19));                                         // main connector
+      [-1, 0, 1].forEach(function (k) {                                                           // three motor leads, down a strut and past the fan
+        const az = L.wire_az + k * 5;
+        t.add(wire([[k * 8, 36, e.z0 + 4], [k * 8, 36.5, L.gap1 - 2], polar(49.5, az, L.gap0 + 9), polar(51, az, f.z1 - 3),
+          polar(51.5, az, f.z0 + 46), polar(34, az, f.z0 + 34), polar(18, az, f.z0 + 26)], 1.8, blue));
+      });
+    })();
+
+    (function flightController() {
+      const t = thing('fc', 3.2), g = facing(t), c = L.fc, zp = L.z_av + 2.5, zb = c.z0 + 0.8;
+      const pcb = t.mk(0x14161a, { roughness: 0.45 }), chip = t.mk(0x2a2b30, { roughness: 0.35 }), cream = t.mk(0xe9e3cf), alu = t.mk(0xc5cad0, { metalness: 0.75, roughness: 0.3 }), gold = t.mk(0xc9a23a, { metalness: 0.7, roughness: 0.35 });
+      [-15.25, 15.25].forEach(dx => [-15.25, 15.25].forEach(function (dy) {
+        t.add(cy(2.3, c.z0 - zp, cream, c.x + dx, dy, (zp + c.z0) / 2, 'z', 12), g);            // standoffs
+        t.add(cy(3.1, 0.5, gold, c.x + dx, dy, zb + 1.05, 'z', 14), g);
+      }));
+      t.add(bx(c.size, c.size, 1.6, pcb, c.x, 0, zb), g);
+      t.add(bx(10, 10, 1.4, chip, c.x - 2, 0, zb + 1.5), g);                                     // processor
+      t.add(bx(4, 4, 1.2, chip, c.x + 9, 8, zb + 1.4), g); t.add(bx(3.5, 3.5, 1.2, chip, c.x + 9, -8, zb + 1.4), g);
+      t.add(bx(7, 8, 3, alu, c.x - c.size / 2 + 3.5, 0, zb + 2.3), g);                           // USB socket
+      [[0, 15, 13, 3.4], [0, -15, 13, 3.4], [15, 0, 3.4, 11]].forEach(q => t.add(bx(q[2], q[3], 3.6, cream, c.x + q[0], q[1], zb + 2.6), g));
+    })();
+
+    (function receiver() {
+      const t = thing('rx', 3.2), g = facing(t), r = L.rx, xc = (r.x0 + r.x1) / 2, yc = (r.y0 + r.y1) / 2;
+      const body = t.mk(0x3b4a57, { roughness: 0.4 }), chip = t.mk(0x17181b), ant = t.mk(0x101113), tip = t.mk(0xe6e6e2);
+      t.add(bx(r.x1 - r.x0, r.y1 - r.y0, 3.2, body, xc, yc, r.z0 + 1.6), g);
+      t.add(bx(6, 6, 1, chip, xc + 3, yc, r.z0 + 3.6), g);
+      [-1, 1].forEach(function (s) {
+        t.add(wire([[r.x0 + 2, yc + s * 3, r.z0 + 3], [r.x0 - 4, yc + s * 4, r.z0 + 14], [r.x0 - 9, yc + s * 2 - 8, r.z0 + 38]], 0.7, ant), g);
+        t.add(wire([[r.x0 - 9, yc + s * 2 - 8, r.z0 + 38], [r.x0 - 10, yc + s * 1.5 - 10, r.z0 + 48]], 1.1, tip), g);
+      });
+    })();
+
+    (function cameras() {
+      const t = thing('cams', 3.2), g = facing(t), k = L.cam;
+      const pcb = t.mk(0x1f6b3a, { roughness: 0.5 }), black = t.mk(0x15161a, { roughness: 0.4 }), glass = t.mk(0x1a2a55, { roughness: 0.08, metalness: 0.6 }), gold = t.mk(0xc9a23a, { metalness: 0.7, roughness: 0.35 });
+      [-k.eye_y, k.eye_y].forEach(function (y) {
+        t.add(bx(1.6, 25, 24, pcb, k.px - 0.8, y, k.z), g);
+        t.add(bx(3.2, 9, 9, black, k.px - 3.2, y, k.z), g);                                      // sensor housing
+        t.add(cy(4.2, 13, black, k.px + 6.5, y, k.z, 'x', 28), g);                               // lens barrel, through the upright
+        t.add(cy(3.1, 0.8, glass, k.px + 13.2, y, k.z, 'x', 28), g);
+        t.add(bx(1, 12, 3, gold, k.px - 1.9, y, k.z - 10), g);                                   // ribbon socket
+      });
+    })();
+
+    (function depthBoard() {
+      const t = thing('depth', 3.2), g = facing(t), d = L.depth, k = L.cam, xc = (d.x0 + d.x1) / 2, zc = (d.z0 + d.z1) / 2;
+      const pcb = t.mk(0x1d5fa8, { roughness: 0.5 }), chip = t.mk(0x1b1c1f, { roughness: 0.35 }), alu = t.mk(0xc5cad0, { metalness: 0.75, roughness: 0.3 }), cream = t.mk(0xe9e3cf), ribbon = t.mk(0xd98a2b, { roughness: 0.6 });
+      t.add(bx(1.6, d.y1 - d.y0, d.z1 - d.z0, pcb, xc + 1.2, 0, zc), g);
+      t.add(bx(3.2, 15, 15, alu, xc - 1.2, -6, zc + 2), g);                                      // processor heat spreader
+      t.add(bx(1.4, 9, 9, chip, xc - 0.4, 16, zc + 4), g); t.add(bx(2.6, 12, 5, alu, xc - 0.6, 14, zc - 9), g);
+      [-k.eye_y, k.eye_y].forEach(function (y) {
+        t.add(bx(2, 13, 3, cream, xc + 3, y, zc - 11), g);
+        t.add(bx(k.px - 2.4 - (xc + 3), 11, 0.4, ribbon, (k.px - 2.4 + xc + 3) / 2, y, zc - 11), g);     // ribbon to each camera
+      });
+    })();
+
+    (function remoteId() {
+      const t = thing('rid', 3.2), g = facing(t), r = L.rid, xc = (r.x0 + r.x1) / 2, zc = (r.z0 + r.z1) / 2;
+      const pcb = t.mk(0x23262b, { roughness: 0.5 }), chip = t.mk(0xb6bcc4, { metalness: 0.7, roughness: 0.3 }), ant = t.mk(0xe9e3cf), led = t.mk(0x2bd16b, { emissive: 0x0c5a2a });
+      t.add(bx(1.6, r.y1 - r.y0, r.z1 - r.z0, pcb, xc + 0.8, 0, zc), g);
+      t.add(bx(2.2, 12, 10, chip, xc - 1.1, -5, zc - 1), g);                                     // radio can
+      t.add(bx(1.6, 7, 3, ant, xc - 0.8, 10, zc + 5), g); t.add(bx(1, 2, 2, led, xc - 0.5, 11, zc - 5), g);
+    })();
+
+    (function gps() {
+      const t = thing('gpsmod', 4.6), z = L.gps.z, s = L.gps.size;
+      const pcb = t.mk(0x16181c, { roughness: 0.5 }), patch = t.mk(0xd9caa6, { roughness: 0.7 }), top = t.mk(0xc8ccd1, { metalness: 0.7, roughness: 0.3 }), chip = t.mk(0x2a2b30);
+      t.add(bx(s, s, 1.6, pcb, 0, 0, z + 0.8));
+      t.add(bx(18, 18, 4, patch, 0, 0, z + 3.6));                                                // ceramic antenna
+      t.add(bx(13, 13, 0.3, top, 0, 0, z + 5.75)); t.add(cy(0.9, 0.5, chip, 3.5, -3.5, z + 6, 'z', 10));
+    })();
+
+    (function servos() {
+      const t = thing('servo', 0), s = L.servo, rt = s.r_po - s.above_ears;
+      const body = t.mk(0x1f55c2, { roughness: 0.3 }), white = t.mk(0xf1f1ee), screw = t.mk(0xb6bcc4, { metalness: 0.7, roughness: 0.3 });
+      const lead = [t.mk(0x6b3d1e), t.mk(0xc81e1e), t.mk(0xe08a1e)];
+      L.vane_az.forEach(function (az) {
+        const g = new THREE.Group(); g.rotation.z = az * Math.PI / 180; t.node.add(g);
+        t.add(bx(s.depth, s.W, s.L, body, rt + s.depth / 2, 0, s.z_c), g);                       // case
+        t.add(bx(2.5, s.W, s.ears + 4.8, body, s.r_po + 1.25, 0, s.z_c), g);                     // mounting ears
+        [-1, 1].forEach(k => t.add(cy(1.5, 1.2, screw, s.r_po + 3, 0, s.z_c + k * s.ears / 2, 'x', 10), g));
+        t.add(cy(5.8, 4, body, rt - 2, 0, s.z_vane, 'x', 20), g);                                // gear turret
+        t.add(cy(2.4, 4.5, white, rt - 6, 0, s.z_vane, 'x', 14), g);                             // output shaft
+        t.add(cy(4.6, 1.6, white, rt - 5, 0, s.z_vane, 'x', 16), g);                             // horn
+        lead.forEach((m, i) => t.add(bx(1.1, 1.1, 14, m, rt + s.depth - 1.5, (i - 1) * 1.3, s.z_c + s.L / 2 + 7), g));
+      });
+    })();
+
+    // ---- ground
+    const ground = { mat: new THREE.MeshBasicMaterial({ color: 0xecd592 }), grid: new THREE.LineBasicMaterial({ color: 0xc9ae5e }) };
     (function () {
       const gr = Math.ceil((M0.stance / 2 + 0.38 * M0.D + 100) / 50) * 50, grp = new THREE.Group(); scene.add(grp);
       const disc = new THREE.Mesh(new THREE.CircleGeometry(gr, 64), ground.mat); disc.position.z = -0.6; grp.add(disc);
@@ -349,16 +591,19 @@ ul.plain li::marker { color: var(--red); }
     let dirty = true, spinning = false, userDist = null;
     const cam = { theta: -2.6, phi: 1.36, dist: 2200, tz: 450 };
     function layout() {
-      const e = view.explode;
-      parts.forEach(function (o) {
-        const p = o.p;
-        o.mesh.position.set(0, 0, p.level * e);
-        if (p.az !== null && p.az !== undefined) { const a = p.az * Math.PI / 180; o.mesh.position.x = Math.cos(a) * e * 0.9; o.mesh.position.y = Math.sin(a) * e * 0.9; }
-        if (o.ghost) o.mesh.visible = view.gear;
-        else o.mesh.material.clippingPlanes = view.cut ? [cutPlane] : [];
-        const on = view.pick && p.key === view.pick;
-        o.mesh.material.emissive.setRGB(on ? 0.55 : 0, on ? 0.42 : 0, on ? 0.05 : 0);
-        o.mesh.material.needsUpdate = true;
+      const e = view.explode, cut = view.mode === 'cut', xray = view.mode === 'xray';
+      things.forEach(function (t) {
+        t.node.position.set(0, 0, t.level * e);
+        if (t.az !== null && t.az !== undefined) { const a = t.az * Math.PI / 180; t.node.position.x = Math.cos(a) * e * 0.9; t.node.position.y = Math.sin(a) * e * 0.9; }
+        const on = view.pick === t.id, ghost = xray && t.shell;
+        t.clipMats.forEach(function (m) { m.clippingPlanes = cut ? [cutPlane] : []; });
+        t.mats.forEach(function (m) {
+          if (t.shell) { m.transparent = ghost; m.opacity = ghost ? (on ? 0.4 : 0.14) : 1; m.depthWrite = !ghost; }
+          if (!m.userData.base) m.userData.base = m.emissive.clone();
+          m.emissive.copy(m.userData.base); if (on) m.emissive.add(new THREE.Color(0.5, 0.36, 0.03));
+          m.needsUpdate = true;
+        });
+        if (t.shell) t.node.renderOrder = ghost ? 2 : 0;
       });
       dirty = true;
     }
@@ -393,16 +638,36 @@ ul.plain li::marker { color: var(--red); }
     }
     function setSpin(on) { spinning = on; $('spin').setAttribute('aria-pressed', on ? 'true' : 'false'); }
 
-    const ptr = new Map(); let pinch = 0;
+    // ---- click to identify
+    const ray = new THREE.Raycaster();
+    function pickAt(cx, cy) {
+      const r = canvas.getBoundingClientRect();
+      place(); camera.updateMatrixWorld(true);
+      ray.setFromCamera(new THREE.Vector2((cx - r.left) / r.width * 2 - 1, -((cy - r.top) / r.height * 2 - 1)), camera);
+      const hits = ray.intersectObjects(pickable, false), cut = view.mode === 'cut', xray = view.mode === 'xray';
+      let shellHit = null;
+      for (let i = 0; i < hits.length; i++) {
+        const u = hits[i].object.userData;
+        if (cut && u.clip && hits[i].point.y < 0) continue;          // that half is cut away
+        if (xray && u.shell) { if (!shellHit) shellHit = u.id; continue; }   // look through the skin first
+        return u.id;
+      }
+      return shellHit;
+    }
+
+    const ptr = new Map(); let pinch = 0, down = null;
     canvas.addEventListener('pointerdown', function (ev) {
       canvas.setPointerCapture(ev.pointerId); ptr.set(ev.pointerId, [ev.clientX, ev.clientY]);
       canvas.classList.add('drag'); setSpin(false);
+      down = ptr.size === 1 ? { x: ev.clientX, y: ev.clientY, moved: 0 } : null;
       if (ptr.size === 2) { const p = Array.from(ptr.values()); pinch = Math.hypot(p[0][0] - p[1][0], p[0][1] - p[1][1]); }
     });
     canvas.addEventListener('pointermove', function (ev) {
       if (!ptr.has(ev.pointerId)) return;
       const prev = ptr.get(ev.pointerId); ptr.set(ev.pointerId, [ev.clientX, ev.clientY]);
+      if (down) down.moved = Math.max(down.moved, Math.hypot(ev.clientX - down.x, ev.clientY - down.y));
       if (ptr.size === 1) {
+        if (down && down.moved < 5) return;                            // still a click, not a drag
         cam.theta -= (ev.clientX - prev[0]) * 0.008;
         cam.phi = Math.min(Math.max(cam.phi - (ev.clientY - prev[1]) * 0.006, 0.12), Math.PI - 0.12);
       } else if (ptr.size === 2) {
@@ -412,8 +677,13 @@ ul.plain li::marker { color: var(--red); }
       }
       dirty = true;
     });
-    const up = function (ev) { ptr.delete(ev.pointerId); pinch = 0; if (!ptr.size) canvas.classList.remove('drag'); };
-    canvas.addEventListener('pointerup', up); canvas.addEventListener('pointercancel', up);
+    canvas.addEventListener('pointerup', function (ev) {
+      const click = down && down.moved < 5 && ptr.size === 1;
+      ptr.delete(ev.pointerId); pinch = 0; if (!ptr.size) canvas.classList.remove('drag');
+      if (click) { const id = pickAt(ev.clientX, ev.clientY); if (id) select(id); else if (view.pick) select(null); }
+      down = null;
+    });
+    canvas.addEventListener('pointercancel', function (ev) { ptr.delete(ev.pointerId); pinch = 0; down = null; if (!ptr.size) canvas.classList.remove('drag'); });
     canvas.addEventListener('wheel', function (ev) {
       ev.preventDefault(); cam.dist = Math.min(Math.max(cam.dist * Math.exp(ev.deltaY * 0.0012), 150), 9000); userDist = cam.dist; dirty = true;
     }, { passive: false });
@@ -425,12 +695,10 @@ ul.plain li::marker { color: var(--red); }
     $('v-side').addEventListener('click', preset(-Math.PI / 2, 1.5));
     $('v-under').addEventListener('click', preset(-2.3, 2.3));
     $('spin').addEventListener('click', () => setSpin(!spinning));
-    $('cut').addEventListener('change', function (ev) {
-      view.cut = ev.target.checked;
-      if (view.cut) { setSpin(false); cam.theta = -Math.PI / 2 - 0.25; cam.phi = 1.45; if (!view.gear) { view.gear = true; $('gear').checked = true; } }
+    function modeChanged() {
+      if (view.mode === 'cut') { setSpin(false); const side = Math.sin(cam.theta); if (side > -0.35) { cam.theta = -Math.PI / 2 - 0.3; cam.phi = 1.45; } }
       layout();
-    });
-    $('gear').addEventListener('change', function (ev) { view.gear = ev.target.checked; layout(); });
+    }
     $('explode').addEventListener('input', function (ev) { view.explode = +ev.target.value; layout(); if (userDist === null) cam.dist = fit(); else fit(); });
     new ResizeObserver(resize).observe(stage);
     matchMedia('(prefers-color-scheme: dark)').addEventListener('change', theme);
@@ -439,7 +707,7 @@ ul.plain li::marker { color: var(--red); }
     layout(); resize(); theme(); frame();
     setSpin(!matchMedia('(prefers-reduced-motion: reduce)').matches);
     requestAnimationFrame(tick);
-    return { layout: layout, frame: frame, cam: cam };
+    return { layout: layout, frame: frame, cam: cam, modeChanged: modeChanged, pickAt: pickAt, ids: () => things.map(t => t.id) };
   }
 
   try {
