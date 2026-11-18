@@ -3,7 +3,7 @@
 
 Writes two files:
   out/rocket_viewer.html  - page fragment published as the Claude artifact (loads three.js from a CDN)
-  checker_rocket.html     - complete standalone HTML file with three.js inlined; open it in any browser
+  project_haddock.html     - complete standalone HTML file with three.js inlined; open it in any browser
 """
 import base64
 import os
@@ -26,6 +26,6 @@ standalone = ('<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="utf-8">
               + page[:head_end] + "\n</head>\n<body>\n"
               + page[head_end:].replace(tag, "<script>" + three + "</script>")
               + "\n</body>\n</html>\n")
-s = os.path.join(here, "checker_rocket.html")
+s = os.path.join(here, "project_haddock.html")
 open(s, "w").write(standalone)
-print("wrote checker_rocket.html", round(os.path.getsize(s) / 1e6, 2), "MB")
+print("wrote project_haddock.html", round(os.path.getsize(s) / 1e6, 2), "MB")

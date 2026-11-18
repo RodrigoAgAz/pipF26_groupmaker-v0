@@ -1,4 +1,4 @@
-<title>Checker Rocket CAD</title>
+<title>Project Haddock</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap">
 <style>
@@ -122,8 +122,8 @@ ul.plain li::marker { color: var(--red); }
 <div class="page">
   <header>
     <div class="checks" aria-hidden="true"></div>
-    <h1>Checker rocket, rev D</h1>
-    <p class="lede">The hovering version: a 90 mm ducted fan inside the traced shape, steered by four vanes in its exhaust, with forward cameras in the nose and GPS in the tip. Click any part, inside or out, to see what it is.</p>
+    <h1>Project Haddock</h1>
+    <p class="lede">Rev E of the hovering rocket. A 90 mm ducted fan sits in the tail, breathing through a ring gap where the red tail meets the checker and steered by four vanes in its exhaust. Forward cameras are in the nose and GPS is in the tip. Click any part, inside or out, to see what it is.</p>
   </header>
 
   <section class="bench">
@@ -209,7 +209,7 @@ ul.plain li::marker { color: var(--red); }
         <li>The cameras are a stereo pair behind two small ports in the nose, looking forward, not up. A camera in the very tip would only see sky.</li>
         <li>The rocket turns to face the way it is travelling, so one forward pair covers its path.</li>
         <li>The GPS sits in the tip, where it has a clear view of the sky through the plastic.</li>
-        <li>Air enters through the ring gap on a checker row line and leaves through the tail.</li>
+        <li>Air enters through the ring gap where the red tail meets the checker, and leaves through the nozzle a short way below the fan.</li>
       </ul>
     </div>
     <div class="block">
@@ -219,6 +219,7 @@ ul.plain li::marker { color: var(--red); }
         <li>The servo mounts fit 9 g class servos. Whether those are strong enough for the vanes is untested.</li>
         <li>The bought parts are drawn at typical sizes, not from the exact models you will buy.</li>
         <li>The legs are thin hollow prints held by three screws each. Expect to replace one after a hard landing.</li>
+        <li>The servo leads run up the outside of the tail to the wire channel. That run is not modelled.</li>
         <li>Nothing has been sliced, printed or flown.</li>
       </ul>
     </div>
@@ -240,13 +241,15 @@ ul.plain li::marker { color: var(--red); }
   // ---------------------------------------------------------------- what everything is
   const PRINTED = {
     nose: 'The red nose cone. It lifts off for access, has two small ports for the cameras to look through, and holds the GPS in its tip.',
-    upper: 'The upper body and battery bay. The battery straps to its floor with the speed controller beside it. That floor is also the roof of the air intake.',
-    fring: 'Holds the top of the fan and stops it lifting under its own thrust. The four struts on top carry the upper body and leave the ring gap the fan breathes through.',
-    tail: 'The lower body, which is also the fan’s exhaust duct. The fan sits on a ledge near its top and the three legs screw to its outside.',
+    upper: 'The upper body, which is the battery bay. The battery stands inside it on the tray, and the avionics plate drops onto a ledge near its top.',
+    tray: 'A ring that joins the upper body to the power bay, with a floor on top for the battery to stand on. Three small screws let the upper body lift off for access.',
+    power: 'The section just above the air intake. Its floor is the roof of the intake and bolts to the four struts. The speed controller and power module live inside.',
+    iring: 'Closes the top of the tail duct and holds the fan down against its own thrust. Its four struts carry everything above, and leave the ring gap the fan breathes through.',
+    tail: 'The lower body, between the fins. The fan drops in from the top and sits on a ledge inside; below it the duct narrows to the nozzle. The small bump on its side covers the wires that pass the fan.',
     vring: 'The nozzle at the very bottom. It carries the four steering vanes and a bracket for each of their servos.',
-    leg_up: 'The upper half of a leg: the fin blade. Three screws hold it to the tail duct and two pins line it up with the lower half.',
+    leg_up: 'The upper half of a leg: the fin blade. Three screws below the fan hold it to the tail duct, a nub locates its top, and two pins line it up with the lower half.',
     leg_lo: 'The lower half of a leg, ending in the pod. It prints hollow to stay light, and it takes the landing.',
-    vane: 'One of four flat blades in the fan’s exhaust. A servo turns each one to deflect the air, which is how the rocket steers.',
+    vane: 'One of four flat blades in the fan\u2019s exhaust. A servo turns each one to deflect the air, which is how the rocket steers.',
     avio: 'A drop-in plate above the battery. The flight controller sits on it and the two cameras mount on its upright.',
     cpl: 'A ring glued into the nose that slides into the upper body, so the nose seats squarely and still comes off.',
     gps: 'A small disc that wedges into the tip of the nose and carries the GPS module.',
@@ -269,9 +272,9 @@ ul.plain li::marker { color: var(--red); }
   ];
   const BY = {}; BOUGHT.forEach(b => { BY[b.id] = b; });
   const ROW = {}; M0.rows.forEach(r => { ROW[r.key] = r; });
-  const INSIDE = { avio: 1, cpl: 1, gps: 1, fan: 1, battery: 1, esc: 1, pm: 1, fc: 1, gpsmod: 1, rx: 1, rid: 1, cams: 1, depth: 1, wiring: 1 };
+  const INSIDE = { tray: 1, avio: 1, cpl: 1, gps: 1, fan: 1, battery: 1, esc: 1, pm: 1, fc: 1, gpsmod: 1, rx: 1, rid: 1, cams: 1, depth: 1, wiring: 1 };
 
-  $('caption').textContent = M0.H + ' × ⌀' + M0.D + ' mm  ·  ' + fmt(M0.ratio, 1) + ' : 1';
+  $('caption').textContent = 'Rev ' + M0.rev + '  \u00b7  ' + M0.H + ' \u00d7 \u2300' + M0.D + ' mm';
   $('rows').innerHTML = M0.rows.map(r => '<tr data-id="' + r.key + '" tabindex="0" aria-selected="false"><td>' + r.name + '</td><td class="n">' + r.qty +
     '</td><td class="n" data-g="' + r.key + '"></td><td class="n">' + r.tall + ' mm</td><td class="f">' + r.file + '</td></tr>').join('');
   $('bought').innerHTML = BOUGHT.map(b => '<tr data-id="' + b.id + '" tabindex="0" aria-selected="false"><td>' + b.name + '</td><td class="n">' + b.qty +
@@ -392,7 +395,7 @@ ul.plain li::marker { color: var(--red); }
 
     const lin = v => Math.pow(v, 2.2);
     const cutPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-    const SHELL = { nose: 1, upper: 1, fring: 1, tail: 1, vring: 1 };
+    const SHELL = { nose: 1, upper: 1, power: 1, iring: 1, tail: 1, vring: 1 };
     const things = [];          // every selectable thing: { id, node, mats, level, az, shell }
     const pickable = [];
 
@@ -429,7 +432,7 @@ ul.plain li::marker { color: var(--red); }
     const facing = function (t) { const g = new THREE.Group(); g.rotation.z = L.front_az * Math.PI / 180; t.node.add(g); return g; };   // nose items are laid out facing +X
 
     (function fan() {
-      const t = thing('fan', 1.1), f = L.fan, zr = f.z1 - 14;
+      const t = thing('fan', 1.0), f = L.fan, zr = f.z1 - 14;
       const shroud = t.mk(0x1f2126, { roughness: 0.4 }), dark = t.mk(0x26282d, { roughness: 0.45 }), blade = t.mk(0xdfe2e6, { roughness: 0.45 });
       const can = t.mk(0x2f5fb8, { metalness: 0.55, roughness: 0.35 }), alu = t.mk(0xa9b0b8, { metalness: 0.7, roughness: 0.35 });
       t.clipMats.push(shroud);
@@ -452,7 +455,7 @@ ul.plain li::marker { color: var(--red); }
     })();
 
     (function battery() {
-      const t = thing('battery', 2.9), b = L.battery, zc = b.z0 + b.sz / 2, top = b.z0 + b.sz;
+      const t = thing('battery', 3.3), b = L.battery, zc = b.z0 + b.sz / 2, top = b.z0 + b.sz;
       const wrap = t.mk(0x1d2025, { roughness: 0.5 }), label = t.mk(0xf0b21c, { roughness: 0.55 }), band = t.mk(0x111214), white = t.mk(0xf1f1ee);
       t.add(bx(b.sx, b.sy, b.sz, wrap, 0, 0, zc));
       t.add(bx(b.sx + 0.8, b.sy + 0.8, b.sz * 0.42, label, 0, 0, zc + 6));
@@ -462,7 +465,7 @@ ul.plain li::marker { color: var(--red); }
     })();
 
     (function esc() {
-      const t = thing('esc', 2.9), e = L.esc, xc = (e.x0 + e.x1) / 2, yc = (e.y0 + e.y1) / 2, zc = (e.z0 + e.z1) / 2;
+      const t = thing('esc', 2.2), e = L.esc, xc = (e.x0 + e.x1) / 2, yc = (e.y0 + e.y1) / 2, zc = (e.z0 + e.z1) / 2;
       const shrink = t.mk(0x16181c, { roughness: 0.55 }), alu = t.mk(0xb6bcc4, { metalness: 0.75, roughness: 0.3 }), cap = t.mk(0x2b2f38), stripe = t.mk(0xd8261c);
       t.add(bx(e.x1 - e.x0, e.y1 - e.y0 - 4, e.z1 - e.z0, shrink, xc, yc - 2, zc));
       t.add(bx(e.x1 - e.x0 - 4, 1.6, e.z1 - e.z0 - 16, alu, xc, e.y1 - 3.2, zc));                // heat sink base
@@ -472,7 +475,7 @@ ul.plain li::marker { color: var(--red); }
     })();
 
     (function powerModule() {
-      const t = thing('pm', 2.9), p = L.pm, xc = (p.x0 + p.x1) / 2, yc = (p.y0 + p.y1) / 2, zc = (p.z0 + p.z1) / 2;
+      const t = thing('pm', 2.2), p = L.pm, xc = (p.x0 + p.x1) / 2, yc = (p.y0 + p.y1) / 2, zc = (p.z0 + p.z1) / 2;
       const pcb = t.mk(0x8a1f1f, { roughness: 0.5 }), alu = t.mk(0xc5cad0, { metalness: 0.7, roughness: 0.3 }), chip = t.mk(0x1b1c1f), cream = t.mk(0xe9e3cf);
       t.add(bx(p.x1 - p.x0, 1.6, p.z1 - p.z0, pcb, xc, yc, zc));
       t.add(bx(11, 3, 6, alu, xc, yc + 2.2, zc + 3));                                            // current shunt
@@ -480,24 +483,26 @@ ul.plain li::marker { color: var(--red); }
     })();
 
     (function wiring() {
-      const t = thing('wiring', 1.9), e = L.esc, p = L.pm, b = L.battery, f = L.fan, top = b.z0 + b.sz, zf = L.bay_floor;
+      const t = thing('wiring', 2.2), e = L.esc, p = L.pm, b = L.battery, f = L.fan, top = b.z0 + b.sz, zp = L.power_floor;
       const red = t.mk(0xc81e1e, { roughness: 0.55 }), black = t.mk(0x18191c, { roughness: 0.55 }), blue = t.mk(0x23408f, { roughness: 0.55 }), yellow = t.mk(0xf2c31b, { roughness: 0.5 });
-      [-1, 1].forEach(function (s) {                                                              // battery to power module
+      [-1, 1].forEach(function (s) {
         const m = s < 0 ? red : black, x = s * 5;
-        t.add(wire([[x, -12, top], [x, -22, top + 10], [x, -33, top + 4], [x, -36.5, top - 30], [x, -36.5, p.z1 + 26]], 2.4, m));
+        // battery lead: over the top of the pack, down its side, through the tray to the main connector
+        t.add(wire([[x, -12, top], [x, -22, top + 10], [x, -32, top + 2], [x, -37, top - 40], [x, -38, b.z0 + 10], [x, -38, L.tray - 8], [x, -36.5, p.z1 + 27]], 2.4, m));
         t.add(wire([[x, -36.5, p.z1 + 12], [x, -36.5, p.z1 - 2]], 2.4, m));
-        t.add(wire([[x, -36.5, p.z0 + 3], [18 + x, -34, zf + 4], [36 + x * 0.5, -10, zf + 4], [33 + x * 0.5, 22, zf + 4], [10 + x, 33, zf + 5], [x * 1.6, 34, e.z0 + 6]], 2.4, m));   // on to the speed controller
+        t.add(wire([[x, -36.5, p.z0 + 3], [18 + x, -33, zp + 4], [35 + x * 0.5, -10, zp + 4], [32 + x * 0.5, 20, zp + 4], [12 + x, 31, zp + 5], [x * 1.6, 34, e.z0 + 6]], 2.4, m));   // on to the speed controller
       });
       t.add(bx(22, 9, 15, yellow, 0, -36.5, p.z1 + 19));                                         // main connector
-      [-1, 0, 1].forEach(function (k) {                                                           // three motor leads, down a strut and past the fan
-        const az = L.wire_az + k * 5;
-        t.add(wire([[k * 8, 36, e.z0 + 4], [k * 8, 36.5, L.gap1 - 2], polar(49.5, az, L.gap0 + 9), polar(51, az, f.z1 - 3),
-          polar(51.5, az, f.z0 + 46), polar(34, az, f.z0 + 34), polar(18, az, f.z0 + 26)], 1.8, blue));
+      const hole = polar(36, L.wire_az - 22, 0);
+      [-1, 0, 1].forEach(function (k) {     // three motor leads: through the bay floor, down past the intake, into the channel beside the fan
+        const az = L.wire_az + k * 4;
+        t.add(wire([[k * 8, 36, e.z0 + 4], [hole[0] + k * 2.5, hole[1] + 6, zp + 8], [hole[0] + k * 2.5, hole[1], zp - 6], polar(50, az, L.gap0 + 8),
+          polar(54.5, az, f.z1 - 6), polar(54.5, az, f.z0 + 50), polar(47, az, f.z0 + 42), polar(18, az, f.z0 + 30)], 1.8, blue));
       });
     })();
 
     (function flightController() {
-      const t = thing('fc', 3.2), g = facing(t), c = L.fc, zp = L.z_av + 2.5, zb = c.z0 + 0.8;
+      const t = thing('fc', 3.7), g = facing(t), c = L.fc, zp = L.z_av + 2.5, zb = c.z0 + 0.8;
       const pcb = t.mk(0x14161a, { roughness: 0.45 }), chip = t.mk(0x2a2b30, { roughness: 0.35 }), cream = t.mk(0xe9e3cf), alu = t.mk(0xc5cad0, { metalness: 0.75, roughness: 0.3 }), gold = t.mk(0xc9a23a, { metalness: 0.7, roughness: 0.35 });
       [-15.25, 15.25].forEach(dx => [-15.25, 15.25].forEach(function (dy) {
         t.add(cy(2.3, c.z0 - zp, cream, c.x + dx, dy, (zp + c.z0) / 2, 'z', 12), g);            // standoffs
@@ -511,7 +516,7 @@ ul.plain li::marker { color: var(--red); }
     })();
 
     (function receiver() {
-      const t = thing('rx', 3.2), g = facing(t), r = L.rx, xc = (r.x0 + r.x1) / 2, yc = (r.y0 + r.y1) / 2;
+      const t = thing('rx', 3.7), g = facing(t), r = L.rx, xc = (r.x0 + r.x1) / 2, yc = (r.y0 + r.y1) / 2;
       const body = t.mk(0x3b4a57, { roughness: 0.4 }), chip = t.mk(0x17181b), ant = t.mk(0x101113), tip = t.mk(0xe6e6e2);
       t.add(bx(r.x1 - r.x0, r.y1 - r.y0, 3.2, body, xc, yc, r.z0 + 1.6), g);
       t.add(bx(6, 6, 1, chip, xc + 3, yc, r.z0 + 3.6), g);
@@ -522,7 +527,7 @@ ul.plain li::marker { color: var(--red); }
     })();
 
     (function cameras() {
-      const t = thing('cams', 3.2), g = facing(t), k = L.cam;
+      const t = thing('cams', 3.7), g = facing(t), k = L.cam;
       const pcb = t.mk(0x1f6b3a, { roughness: 0.5 }), black = t.mk(0x15161a, { roughness: 0.4 }), glass = t.mk(0x1a2a55, { roughness: 0.08, metalness: 0.6 }), gold = t.mk(0xc9a23a, { metalness: 0.7, roughness: 0.35 });
       [-k.eye_y, k.eye_y].forEach(function (y) {
         t.add(bx(1.6, 25, 24, pcb, k.px - 0.8, y, k.z), g);
@@ -534,7 +539,7 @@ ul.plain li::marker { color: var(--red); }
     })();
 
     (function depthBoard() {
-      const t = thing('depth', 3.2), g = facing(t), d = L.depth, k = L.cam, xc = (d.x0 + d.x1) / 2, zc = (d.z0 + d.z1) / 2;
+      const t = thing('depth', 3.7), g = facing(t), d = L.depth, k = L.cam, xc = (d.x0 + d.x1) / 2, zc = (d.z0 + d.z1) / 2;
       const pcb = t.mk(0x1d5fa8, { roughness: 0.5 }), chip = t.mk(0x1b1c1f, { roughness: 0.35 }), alu = t.mk(0xc5cad0, { metalness: 0.75, roughness: 0.3 }), cream = t.mk(0xe9e3cf), ribbon = t.mk(0xd98a2b, { roughness: 0.6 });
       t.add(bx(1.6, d.y1 - d.y0, d.z1 - d.z0, pcb, xc + 1.2, 0, zc), g);
       t.add(bx(3.2, 15, 15, alu, xc - 1.2, -6, zc + 2), g);                                      // processor heat spreader
@@ -546,7 +551,7 @@ ul.plain li::marker { color: var(--red); }
     })();
 
     (function remoteId() {
-      const t = thing('rid', 3.2), g = facing(t), r = L.rid, xc = (r.x0 + r.x1) / 2, zc = (r.z0 + r.z1) / 2;
+      const t = thing('rid', 3.7), g = facing(t), r = L.rid, xc = (r.x0 + r.x1) / 2, zc = (r.z0 + r.z1) / 2;
       const pcb = t.mk(0x23262b, { roughness: 0.5 }), chip = t.mk(0xb6bcc4, { metalness: 0.7, roughness: 0.3 }), ant = t.mk(0xe9e3cf), led = t.mk(0x2bd16b, { emissive: 0x0c5a2a });
       t.add(bx(1.6, r.y1 - r.y0, r.z1 - r.z0, pcb, xc + 0.8, 0, zc), g);
       t.add(bx(2.2, 12, 10, chip, xc - 1.1, -5, zc - 1), g);                                     // radio can
@@ -554,7 +559,7 @@ ul.plain li::marker { color: var(--red); }
     })();
 
     (function gps() {
-      const t = thing('gpsmod', 4.6), z = L.gps.z, s = L.gps.size;
+      const t = thing('gpsmod', 4.9), z = L.gps.z, s = L.gps.size;
       const pcb = t.mk(0x16181c, { roughness: 0.5 }), patch = t.mk(0xd9caa6, { roughness: 0.7 }), top = t.mk(0xc8ccd1, { metalness: 0.7, roughness: 0.3 }), chip = t.mk(0x2a2b30);
       t.add(bx(s, s, 1.6, pcb, 0, 0, z + 0.8));
       t.add(bx(18, 18, 4, patch, 0, 0, z + 3.6));                                                // ceramic antenna
@@ -608,8 +613,8 @@ ul.plain li::marker { color: var(--red); }
       dirty = true;
     }
     function fit() {
-      const e = view.explode, h = M0.H + e * 4.9 + 40, w = M0.stance + 0.76 * M0.D + 40 + e * 1.8, t = Math.tan(camera.fov * Math.PI / 360);
-      cam.tz = (M0.H + e * 4.4) / 2 - 10;
+      const e = view.explode, h = M0.H + e * 5.4 + 40, w = M0.stance + 0.76 * M0.D + 40 + e * 1.8, t = Math.tan(camera.fov * Math.PI / 360);
+      cam.tz = (M0.H + e * 4.9) / 2 - 10;
       return Math.max(h / 2 / t, w / 2 / (t * camera.aspect)) * 1.06;
     }
     function frame() { userDist = null; cam.dist = fit(); dirty = true; }

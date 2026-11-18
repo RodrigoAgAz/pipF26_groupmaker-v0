@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """
-Checker rocket, rev D - ducted-fan hover version (CadQuery).
+Project Haddock, rev E - ducted-fan hover rocket (CadQuery).
 
-Same traced outer shape as rev C, scaled so a 90 mm ducted fan fits inside it:
-  - fan in the lower checker, breathing through a ring gap hidden on a checker row line
-  - the tail is opened up into the exhaust duct, with four steering vanes and servo mounts
-  - battery in the widest part of the body, flight electronics above it
-  - two forward-looking camera ports in the nose (stereo pair) and a GPS seat in the tip
+The traced checker-rocket shape, scaled so a 90 mm ducted fan fits inside it. Rev E moves
+the fan down into the tail, between the fins:
+  - the intake ring gap now sits on the line where the red tail meets the checker
+  - the exhaust duct below the fan is short, and the lower body is slightly fatter to hold the fan
+  - above the intake is a power bay (speed controller), then the battery on a tray, then the
+    flight electronics, two forward camera ports in the nose and a GPS seat in the tip
+  - four steering vanes and their servo mounts hang below the tail
 
 Coordinates: Z up, Z=0 is the ground under the feet. All dimensions in mm.
 MEASURE YOUR FAN, SERVOS AND CAMERAS before printing: FAN, SERVO and CAM below drive the fits.
@@ -25,7 +27,7 @@ from scipy.interpolate import PchipInterpolator
 # ------------------------------------------------------------------ parameters
 P = dict(
     H=900.0,       # overall height, ground to nose tip
-    D=118.0,       # maximum body diameter (reference is H / 7.75; 118 gives the fan 8 mm of margin)
+    D=118.0,       # maximum body diameter (reference is H / 7.75)
     STANCE=376.0,  # foot circle diameter (reference: 3.19 x D)
     ROWS=5, COLS=4,
 )
@@ -34,16 +36,16 @@ SERVO = dict(L=22.6, W=12.2, ears=27.8, above_ears=6.8, depth=22.7, shaft_off=5.
 CAM = dict(eye_y=25.0, port=16.0, lens=9.0, plate_x=10.0)       # stereo pair: 50 mm baseline
 BATTERY = (50.0, 50.0, 155.0)                                    # 6S 5000 mAh class
 
-# Outer mould line, normalised (z / H, r / (D/2)). Above the fins this is the traced
-# reference shape; below them the tail is kept wide because it is the fan's exhaust duct.
+# Outer mould line, normalised (z / H, r / (D/2)). From the widest point up this is the traced
+# reference shape. Below it the body is kept wide enough to hold the fan between the fins.
 SHAPE = dict(
-    profile=[(0.1667, 0.72), (0.235, 0.745), (0.30, 0.765), (0.36, 0.785), (0.415, 0.80),
-             (0.467, 0.835), (0.501, 0.885), (0.55, 0.94), (0.60, 0.98), (0.673, 1.0),
+    profile=[(0.1667, 0.72), (0.235, 0.775), (0.285, 0.838), (0.315, 0.864), (0.415, 0.868),
+             (0.467, 0.874), (0.501, 0.89), (0.55, 0.94), (0.60, 0.98), (0.673, 1.0),
              (0.742, 0.965), (0.776, 0.92), (0.811, 0.85), (0.845, 0.795), (0.88, 0.69),
              (0.914, 0.545), (0.948, 0.37), (0.975, 0.20), (1.0, 0.0)],
     t_exit=0.1667,    # nozzle exit (bottom of the vane ring)
     t_tail=0.235,     # where the fins' arch meets the body; vane ring joins here
-    t_chk0=0.415,     # checker band bottom
+    t_chk0=0.415,     # checker band bottom = intake gap
     t_chk1=0.845,     # checker band top = nose joint
 )
 LEG = dict(
@@ -55,10 +57,11 @@ LEG = dict(
 )
 
 WD, W, FIT, LAP = 1.6, 1.0, 0.15, 8.0     # duct wall, upper skin wall, sliding fit, lap joint length
-GAP, LIP = 26.0, 3.2                        # intake ring gap height, fan retaining lip
+GAP, LIP_MAX = 30.0, 3.2                    # intake ring gap height, room for the fan retaining lip
 LEG_AZ = [0, 120, 240]
 VANE_AZ = [45, 135, 225, 315]
 STRUT_AZ = [45, 135, 225, 315]
+JOINT_AZ = [30, 150, 270]                   # screws between the power bay and the battery tray
 FRONT_AZ = 180                              # the cameras look this way
 WIRE_AZ = 60
 SECT_K = 12
@@ -78,18 +81,22 @@ def derive():
     g["RBORE"] = FAN["od"] / 2 + 0.2
 
     # lowest station wide enough for the fan, then snap the intake gap up to a checker row line
-    z = Z_CHK0
+    z = Z_TAIL
     while ro(z) < RBORE + WD and z < 0.673 * H:
         z += 0.25
     bounds = [Z_CHK0 + k * ROW_H for k in range(P["ROWS"] + 1)]
-    ok = [b for b in bounds if b >= z + FAN["length"] + LIP - 0.01 and b < 0.70 * H]
+    ok = [b for b in bounds if b >= z + FAN["length"] + LIP_MAX - 0.01 and b < 0.70 * H]
     if not ok:
         raise SystemExit("The fan does not fit this body: increase D")
     g["Z_GAP0"] = ok[0]
     g["Z_GAP1"] = Z_GAP0 + GAP
+    g["LIP"] = (ro(Z_GAP0) - WD) - (RBORE - 2.0)       # 45 deg retaining lip under the intake ring
+    assert 0.5 < LIP <= LIP_MAX, "fan retaining lip out of range: %.2f" % LIP
     g["Z_FTOP"] = Z_GAP0 - LIP
     g["Z_SEAT"] = Z_FTOP - FAN["length"]
-    g["Z_J1"] = Z_GAP0 - ROW_H if Z_GAP0 - ROW_H > Z_SEAT + 3 else Z_SEAT + 5   # tail duct / fan ring joint
+    g["Z_JM"] = [b for b in bounds if b >= Z_GAP1 + 100][0]     # power bay / upper body joint
+    g["Z_TRAY"] = Z_JM + 12.0                                   # underside of the battery tray
+    g["Z_BATT"] = Z_TRAY + 2.5                                  # battery stands here
     g["Z_J2"] = Z_CHK1
     g["Z_AV"] = Z_J2 - 16.0                    # avionics plate
     g["Z_EYE"] = Z_J2 + 20.0                   # camera ports
@@ -104,9 +111,11 @@ def derive():
     g["Z_SC"] = (Z_PB + Z_PT) / 2
     g["Z_VANE"] = Z_SC - SERVO["shaft_off"]
     assert Z_PT < Z_TAIL - 1, "servo bracket does not fit under the tail joint"
-    g["STRUT_R"] = ro(Z_GAP1) - 7.0
-    z_rt = LEG["t_root_top"] * H
-    g["LEG_SCREW_Z"] = [Z_TAIL + f * (z_rt - Z_TAIL) for f in (0.25, 0.55, 0.85)]
+    g["STRUT_R"] = RBORE - 2.2
+    # leg screws all sit below the fan, where there is room for their heads inside the duct;
+    # that is also where a landing pulls the fin away from the body. A nub locates the top.
+    g["LEG_SCREW_Z"] = [Z_TAIL + 12, (Z_TAIL + Z_SEAT) / 2, Z_SEAT - 12]
+    g["LEG_NUB_Z"] = Z_SEAT + 0.75 * FAN["length"]
 
 
 def ro(z):
@@ -170,6 +179,11 @@ def qbez(p0, p1, p2, n):
     return ((1 - t) ** 2 * np.array(p0) + 2 * (1 - t) * t * np.array(p1) + t ** 2 * np.array(p2)).tolist()
 
 
+def polar(r, az):
+    a = math.radians(az)
+    return r * math.cos(a), r * math.sin(a)
+
+
 # ------------------------------------------------------------------ fins and pods
 def leg_curves():
     z_rt, z_pt, z_pm = LEG["t_root_top"] * H, LEG["t_pod_tip"] * H, LEG["t_pod_max"] * H
@@ -220,7 +234,7 @@ def pod_profile():
 
 
 def make_leg():
-    """One fin with its pod, trimmed to the body, as (upper, lower) printable pieces."""
+    """One fin with its pod, trimmed to the body, as (whole, upper, lower) printable pieces."""
     wires = []
     for z, xi, xo, w in leg_slices():
         up = sect_pts(xi, xo, w)
@@ -233,12 +247,12 @@ def make_leg():
            .spline(pp[1:], includeCurrent=True).close()
            .revolve(360, (0, 0, 0), (0, 1, 0)).translate((R_FOOT, 0, 0)))
     leg = fin.union(pod)
-    leg = leg.cut(solid_under(lambda z: ro(z) + 0.25, Z_EXIT - 5, Z_J1 + 5))     # saddle to the duct
+    leg = leg.cut(solid_under(lambda z: ro(z) + 0.25, Z_EXIT - 5, Z_GAP0 + 5))   # saddle to the duct
     leg = leg.cut(vcyl(R_FOOT, 0, pp[0][1] - 1, pp[0][1] + 9, 2.1))              # foot pad socket
     for z in LEG_SCREW_Z:                                                        # M3 heat-set inserts
         leg = leg.cut(xcyl(0, z, ro(z) - 2, ro(z) + 9.5, 2.0))
-    # alignment pins across the print split
-    x_in = _interp(qbez(*leg_curves()[1], 24), Z_LEGCUT)
+    leg = leg.cut(xcyl(0, LEG_NUB_Z, ro(LEG_NUB_Z) - 2, ro(LEG_NUB_Z) + 3.9, 2.25))   # pocket for the locating nub
+    x_in = _interp(qbez(*leg_curves()[1], 24), Z_LEGCUT)                         # alignment pins across the print split
     for x in (R_FOOT, (x_in + R_FOOT) / 2):
         leg = leg.cut(vcyl(x, 0, Z_LEGCUT - 10, Z_LEGCUT + 10, 1.55))
     big = box(-50, 400, -200, 200, Z_LEGCUT, 2000)
@@ -264,7 +278,7 @@ def make_vane_ring():
     rv = ro(Z_VANE)
     hw = SERVO["W"] / 2
     # servo bracket: two cheeks with a 45 deg underside, and a plate the servo ears screw to
-    cheek = [(rv - 1.0, Z_BR0), (R_PO, Z_PB), (R_PO, Z_PT), (R_PO - 8.0, Z_PT), (rv - 1.0, Z_PT - 12.0)]   # top corner relieved for the fins
+    cheek = [(rv - 1.0, Z_BR0), (R_PO, Z_PB), (R_PO, Z_PT), (R_PO - 8.0, Z_PT), (rv - 1.0, Z_PT - 12.0)]
     br = xz_plate(cheek, hw, hw + 2.4).union(xz_plate(cheek, -hw - 2.4, -hw)).cut(core)
     plate = box(R_PO - 2.0, R_PO, -hw - 2.4, hw + 2.4, Z_PB, Z_PT)
     plate = plate.cut(box(R_PO - 3, R_PO + 1, -hw, hw, Z_SC - SERVO["L"] / 2, Z_SC + SERVO["L"] / 2))
@@ -278,53 +292,94 @@ def make_vane_ring():
 
 
 def make_tail_duct():
-    body = shell(Z_TAIL, Z_J1, WD)
+    """Lower body between the fins: the fan drops in from the top and sits on a ledge."""
+    body = shell(Z_TAIL, Z_GAP0, WD)
     ri = ro(Z_SEAT) - WD
-    # fan seat: ledge at the fan duct diameter, 45 deg underside
     body = body.union(ring([(ri + 0.6, Z_SEAT), (FAN["id"] / 2, Z_SEAT), (FAN["id"] / 2, Z_SEAT - 1.5),
                             (ri + 0.6, Z_SEAT - 1.5 - (ri + 0.6 - FAN["id"] / 2))]))
-    body = body.cut(lap_cut(Z_J1 - LAP, Z_J1 + 0.5)).cut(lap_cut(Z_TAIL - 0.5, Z_TAIL + LAP))
-    for az in LEG_AZ:                                  # M3 clearance for the leg screws
-        for z in LEG_SCREW_Z:
+    # top keeps the outer half of the wall (the intake ring's skirt drops inside it);
+    # bottom keeps the inner half (the vane ring's skirt slips over it)
+    body = body.cut(band(lambda z: ro(z) - WD / 2 + 0.05, WD, Z_GAP0 - LAP, Z_GAP0 + 0.5))
+    body = body.cut(lap_cut(Z_TAIL - 0.5, Z_TAIL + LAP))
+    # wire channel past the fan: a slot through the wall under a small external blister
+    rr = ro(Z_GAP0 - 20)
+    z0 = Z_SEAT - 16
+    blister = xz_plate([(rr - 1.0, z0), (rr + 6.5, z0 + 7.5), (rr + 6.5, Z_GAP0), (rr - 1.0, Z_GAP0)], -9, 9)
+    channel = xz_plate([(rr - 2.6, z0 + 3.5), (rr + 5.0, z0 + 11.1), (rr + 5.0, Z_GAP0 + 1), (rr - 2.6, Z_GAP0 + 1)], -7.5, 7.5)
+    body = body.union(rotz(blister, WIRE_AZ)).cut(rotz(channel, WIRE_AZ))
+    body = body.cut(rotz(xcyl(0, z0 + 16, rr + 3, rr + 9, 3.0), WIRE_AZ))       # servo leads enter here
+    for az in LEG_AZ:
+        for z in LEG_SCREW_Z:                              # M3 clearance for the leg screws
             body = body.cut(rotz(xcyl(0, z, ro(z) - 6, ro(z) + 2, 1.7), az))
+        body = body.union(rotz(xcyl(0, LEG_NUB_Z, ro(LEG_NUB_Z) - 0.6, ro(LEG_NUB_Z) + 3.2, 2.0), az))
     return body
 
 
-def make_fan_ring():
-    body = shell(Z_J1, Z_GAP0, WD).union(band(ro, WD / 2, Z_J1 - LAP, Z_J1 + 1.0))
-    ri = lambda z: ro(z) - WD
-    zb = Z_FTOP - 6.0
-    za = zb - (ri(zb) - RBORE) - 0.5
-    # ring that centres the top of the fan and holds it down against its own thrust
-    back = [(ri(z) + 0.5, z) for z in np.linspace(Z_GAP0, za, 8)]
-    lip = ring([(RBORE, zb), (RBORE, Z_FTOP), (RBORE - 2.2, Z_FTOP + 2.2), (RBORE - 2.2, Z_GAP0)] + back)
-    lip = lip.cut(rotz(box(RBORE - 4, R + 5, -8, 8, za - 2, Z_GAP0 + 1), WIRE_AZ)
-                  .intersect(solid_under(lambda z: ro(z) - WD, Z_J1, Z_GAP0 + 2)))    # motor wire notch
-    body = body.union(lip)
-    outer = solid_under(lambda z: ro(z) - 0.3, Z_J1, Z_GAP1)     # struts sit a hair inside the mould line
-    strut = box(RBORE - 3.3, R + 5, -3.0, 3.0, Z_GAP0 - 2.0, Z_GAP1).intersect(outer)
-    strut = strut.cut(vcyl(STRUT_R, 0, Z_GAP1 - 9, Z_GAP1 + 1, 2.0))               # M3 heat-set insert
+def make_intake_ring():
+    """Closes the top of the tail duct: holds the fan down, and its struts carry everything above."""
+    rr = ro(Z_GAP0)
+    ri, rl = rr - WD, RBORE - 2.0
+    body = ring([(ri, Z_GAP0 - LAP), (rr - WD / 2 - 0.05, Z_GAP0 - LAP), (rr - WD / 2 - 0.05, Z_GAP0), (rr, Z_GAP0),
+                 (rr, Z_GAP0 + 2.2), (rl, Z_GAP0 + 2.2), (rl, Z_GAP0), (ri, Z_FTOP)])
+    outer = solid_under(lambda z: ro(z) - 0.3, Z_GAP0 - 1, Z_GAP1)     # struts sit a hair inside the mould line
+    strut = xz_plate([(rl, Z_GAP0 + 1.0), (rl - 3.7, Z_GAP0 + 4.7), (rl - 3.7, Z_GAP1), (R + 5, Z_GAP1),
+                      (R + 5, Z_GAP0 + 1.0)], -3.0, 3.0).intersect(outer)
+    strut = strut.cut(vcyl(STRUT_R, 0, Z_GAP1 - 9, Z_GAP1 + 1, 2.0))    # M3 heat-set insert
     for az in STRUT_AZ:
         body = body.union(rotz(strut, az))
+    body = body.cut(rotz(box(ri - 1.5, rr + 9, -7.5, 7.5, Z_GAP0 - LAP - 1, Z_GAP0 + 3.2), WIRE_AZ))   # wires pass here
+    return body
+
+
+def make_power_bay():
+    """First section above the intake. Its floor is the intake roof and bolts to the struts."""
+    body = shell(Z_GAP1, Z_JM, W)
+    floor = solid_under(lambda z: ro(z) - 0.5, Z_GAP1, Z_GAP1 + 2.5)
+    for az in STRUT_AZ:
+        x, y = polar(STRUT_R, az)
+        floor = floor.cut(vcyl(x, y, Z_GAP1 - 1, Z_GAP1 + 4, 1.7))
+    floor = floor.cut(box(-15, 15, 32, 40, Z_GAP1 - 1, Z_GAP1 + 4))                  # speed controller cooling slot
+    x, y = polar(36, WIRE_AZ - 22)
+    floor = floor.cut(vcyl(x, y, Z_GAP1 - 1, Z_GAP1 + 4, 6.5))                       # motor and servo leads
+    body = body.union(floor)
+    for az in JOINT_AZ:
+        body = body.cut(rotz(xcyl(0, Z_JM - 6, 30, R + 5, 1.4), az))
+    return body
+
+
+def joint_ring(zj, wall, down, up, thick=1.2):
+    """Ring across a body joint. Each half follows the bore if the bore narrows away from the
+    joint, and is a plain cylinder if it widens, so it can always be inserted."""
+    eps = 2.0
+    grows = ro(zj + eps) > ro(zj - eps)
+    r_j = ro(zj) - wall - FIT
+
+    def r_out(z):
+        conform = (z < zj and grows) or (z > zj and not grows)
+        return ro(z) - wall - FIT if conform else r_j
+
+    return band(r_out, thick, zj - down, zj + up), r_j
+
+
+def make_battery_tray():
+    """Joint ring between the power bay and the upper body, capped to carry the battery."""
+    ringp, r_j = joint_ring(Z_JM, W, 12.0, Z_TRAY - Z_JM, thick=2.0)
+    cap = vcyl(0, 0, Z_TRAY - 0.5, Z_BATT, r_j)
+    for x in (-BATTERY[0] / 2 - 4, BATTERY[0] / 2 + 4):                              # battery strap
+        cap = cap.cut(box(x - 2, x + 2, -13, 13, Z_TRAY - 1, Z_BATT + 1))
+    cap = cap.cut(vcyl(0, -38, Z_TRAY - 1, Z_BATT + 1, 7.0))                         # battery leads
+    body = ringp.union(cap)
+    for az in JOINT_AZ:
+        body = body.cut(rotz(xcyl(0, Z_JM - 6, 30, R + 5, 1.0), az))                 # pilot holes for the joint screws
     return body
 
 
 def make_upper():
-    body = shell(Z_GAP1, Z_J2, W)
-    floor = solid_under(lambda z: ro(z) - 0.5, Z_GAP1, Z_GAP1 + 2.5)
-    for az in STRUT_AZ:
-        a = math.radians(az)
-        floor = floor.cut(vcyl(STRUT_R * math.cos(a), STRUT_R * math.sin(a), Z_GAP1 - 1, Z_GAP1 + 4, 1.7))
-    for x in (-BATTERY[0] / 2 - 4, BATTERY[0] / 2 + 4):                              # battery strap
-        floor = floor.cut(box(x - 2, x + 2, -13, 13, Z_GAP1 - 1, Z_GAP1 + 4))
-    floor = floor.cut(box(-15, 15, 32, 40, Z_GAP1 - 1, Z_GAP1 + 4))                  # ESC cooling slot
-    floor = floor.cut(vcyl(0, -38, Z_GAP1 - 1, Z_GAP1 + 4, 6.0))                     # wiring
-    body = body.union(floor)
+    body = shell(Z_JM, Z_J2, W)
     rw = ro(Z_AV) - W
     r_led = ro(Z_J2) - W - FIT - 1.2 - 3.5
-    body = body.union(ring([(rw + 0.6, Z_AV), (r_led, Z_AV), (r_led, Z_AV - 1.5),
+    return body.union(ring([(rw + 0.6, Z_AV), (r_led, Z_AV), (r_led, Z_AV - 1.5),
                             (rw + 0.6, Z_AV - 1.5 - (rw + 0.6 - r_led))]))
-    return body
 
 
 def make_nose():
@@ -339,7 +394,8 @@ def make_nose():
 
 
 def make_avionics():
-    """Drop-in plate above the battery: flight controller on the plate, cameras on the upright."""
+    """Drop-in plate above the battery: flight controller on the plate, cameras on the upright.
+    Modelled facing +X; main() turns it to FRONT_AZ."""
     rp = ro(Z_J2) - W - FIT - 1.2 - 0.8
     plate = vcyl(0, 0, Z_AV, Z_AV + 2.5, rp)
     for dx in (-15.25, 15.25):                         # 30.5 mm flight-controller pattern
@@ -347,7 +403,7 @@ def make_avionics():
             plate = plate.cut(vcyl(FC_X + dx, dy, Z_AV - 1, Z_AV + 4, 1.6))
     plate = plate.cut(vcyl(0, -rp + 9, Z_AV - 1, Z_AV + 4, 6.0))                     # cable hole
     px = CAM["plate_x"]
-    room = solid_under(lambda z: ro(z) - W - 3.0, Z_AV, Z_EYE + 24)   # clears the nose shoulder ring
+    room = solid_under(lambda z: ro(z) - W - 3.0, Z_AV, Z_EYE + 24)                  # clears the nose shoulder ring
     wall = box(px, px + 2.5, -45, 45, Z_AV, Z_EYE + 16).intersect(room)
     for y in (-CAM["eye_y"], CAM["eye_y"]):
         wall = wall.cut(xcyl(y, Z_EYE, px - 1, px + 4, CAM["lens"] / 2))
@@ -357,8 +413,7 @@ def make_avionics():
     gus = [(px, Z_AV + 2.5), (px - 22, Z_AV + 2.5), (px, Z_AV + 21)]
     for y in (-22, 22):
         wall = wall.union(xz_plate(gus, y - 1.2, y + 1.2))
-    # built facing +X, then turned so the cameras look out of the front
-    return plate.union(wall)        # modelled facing +X; main() turns it to FRONT_AZ
+    return plate.union(wall)
 
 
 def make_gps_seat():
@@ -368,18 +423,6 @@ def make_gps_seat():
     while ro(z) - W > r + 0.3:
         z += 0.5
     return d.translate((0, 0, z - 2.0)), z - 2.0
-
-
-def make_coupler(zj, wall, down, up):
-    eps = 2.0
-    grows = ro(zj + eps) > ro(zj - eps)
-    r_j = ro(zj) - wall - FIT
-
-    def r_out(z):
-        conform = (z < zj and grows) or (z > zj and not grows)
-        return ro(z) - wall - FIT if conform else r_j
-
-    return band(r_out, 1.2, zj - down, zj + up)
 
 
 def make_vane():
@@ -396,15 +439,16 @@ def make_vane():
 def component_layout():
     """Where every bought part sits. Drives the collision check and the viewer's drawings.
     Items under 'nose frame' are given facing +X and turned to FRONT_AZ."""
-    zf = Z_GAP1 + 2.5
+    zp = Z_GAP1 + 2.5          # power bay floor
     px = CAM["plate_x"]
     _, zg = make_gps_seat()
     return dict(
-        front_az=FRONT_AZ, wire_az=WIRE_AZ, vane_az=VANE_AZ, gap0=Z_GAP0, gap1=Z_GAP1, bay_floor=zf, z_av=Z_AV,
+        front_az=FRONT_AZ, wire_az=WIRE_AZ, vane_az=VANE_AZ, gap0=Z_GAP0, gap1=Z_GAP1, power_floor=zp, z_av=Z_AV,
+        tray=Z_TRAY,
         fan=dict(z0=Z_SEAT, z1=Z_FTOP, od=FAN["od"], id=FAN["id"], hub=FAN["hub"]),
-        battery=dict(sx=BATTERY[0], sy=BATTERY[1], sz=BATTERY[2], z0=zf),
-        esc=dict(x0=-19, x1=19, y0=30, y1=42, z0=zf + 2, z1=zf + 87),
-        pm=dict(x0=-12.5, x1=12.5, y0=-40, y1=-33, z0=zf + 5, z1=zf + 26),
+        battery=dict(sx=BATTERY[0], sy=BATTERY[1], sz=BATTERY[2], z0=Z_BATT),
+        esc=dict(x0=-19, x1=19, y0=30, y1=42, z0=zp + 2, z1=zp + 87),
+        pm=dict(x0=-12.5, x1=12.5, y0=-40, y1=-33, z0=zp + 5, z1=zp + 26),
         # nose frame
         fc=dict(x=FC_X, size=36, z0=Z_AV + 8.5, z1=Z_AV + 16),
         rx=dict(x0=-20, x1=0, y0=24.5, y1=36.5, z0=Z_AV + 2.5, z1=Z_AV + 7.5),
@@ -486,7 +530,7 @@ def split_checker(part, zlo, zhi):
 
 
 # ------------------------------------------------------------------ build + export
-RED, WHITE, DARK, GREY, BLUE = (0.84, 0.09, 0.06), (0.97, 0.96, 0.92), (0.13, 0.13, 0.14), (0.62, 0.62, 0.64), (0.22, 0.42, 0.72)
+RED, WHITE, DARK, GREY = (0.84, 0.09, 0.06), (0.97, 0.96, 0.92), (0.13, 0.13, 0.14), (0.62, 0.62, 0.64)
 
 
 def vol(wp):
@@ -511,6 +555,17 @@ def mesh_of(wp, tol=0.25, ang=0.3):
     return np.array(verts, dtype=np.float32), np.array(tris, dtype=np.uint32)
 
 
+def build():
+    """All printed parts in flight position."""
+    front = lambda wp: rotz(wp, FRONT_AZ)
+    leg, leg_up, leg_lo = make_leg()
+    gps, z_gps = make_gps_seat()
+    cpl, _ = joint_ring(Z_J2, W, 10.0, 12.0)
+    return dict(vring=make_vane_ring(), tail=make_tail_duct(), iring=make_intake_ring(), power=make_power_bay(),
+                tray=make_battery_tray(), upper=make_upper(), nose=make_nose(), avio=front(make_avionics()),
+                gps=gps, cpl=cpl, vane=make_vane(), foot=make_foot(), leg=leg, leg_up=leg_up, leg_lo=leg_lo), z_gps
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=None)
@@ -522,47 +577,37 @@ def main():
         os.makedirs(os.path.join(out, d), exist_ok=True)
         for f in os.listdir(os.path.join(out, d)):
             os.remove(os.path.join(out, d, f))
-    front = lambda wp: rotz(wp, FRONT_AZ)      # parts modelled facing +X, cameras look along FRONT_AZ
 
-    print("vane ring");   vring = make_vane_ring()
-    print("tail duct");   tail = make_tail_duct()
-    print("fan ring");    fring = make_fan_ring()
-    print("upper body");  upper = make_upper()
-    print("nose");        nose = make_nose()
-    print("avionics");    avio = front(make_avionics())
-    gps, z_gps = make_gps_seat()
-    cpl = make_coupler(Z_J2, W, 10.0, 12.0)
-    vane = make_vane()
-    foot = make_foot()
-    print("legs");        leg, leg_up, leg_lo = make_leg()
+    print("building parts")
+    B, z_gps = build()
     print("checker")
-    tail_r, tail_w = split_checker(tail, Z_TAIL, Z_J1)
-    fring_r, fring_w = split_checker(fring, Z_J1, Z_GAP0)
-    upper_r, upper_w = split_checker(upper, Z_GAP1, Z_J2)
-    parts = dict(vane_ring=vring, tail_duct=tail, fan_ring=fring, upper_body=upper, nose=nose,
-                 avionics_plate=avio, gps_seat=gps, nose_shoulder=cpl, vane=vane, leg_upper=leg_up,
-                 leg_lower=leg_lo, foot_pad=foot)
-    for n, wp in parts.items():
+    power_r, power_w = split_checker(B["power"], Z_GAP1, Z_JM)
+    upper_r, upper_w = split_checker(B["upper"], Z_JM, Z_J2)
+    for n, wp in B.items():
+        if n == "leg":
+            continue
         bb = cq.Compound.makeCompound(wp.vals()).BoundingBox()
-        print(f"  {n:15s} solids={len(wp.solids().vals())} valid={valid(wp)} "
-              f"size {bb.xlen:.0f} x {bb.ylen:.0f} x {bb.zlen:.0f}")
+        print(f"  {n:8s} solids={len(wp.solids().vals())} valid={valid(wp)} size {bb.xlen:.0f} x {bb.ylen:.0f} x {bb.zlen:.0f}")
 
     PLA = 1.24
     leg_wall, leg_fill = 0.045, 0.03          # one perimeter + 3 % infill: these are big hollow shapes
     lg = lambda wp: (area(wp) * leg_wall + vol(wp) * leg_fill) * PLA
+    v = lambda k: vol(B[k]) * PLA
     rows = [
-        dict(key="nose", name="Nose, with camera ports", qty=1, g=vol(nose) * PLA, tall=H - Z_J2, file="nose.stl", light=True),
-        dict(key="upper", name="Upper body (battery bay)", qty=1, g=vol(upper) * PLA, tall=Z_J2 - Z_GAP1, file="upper_body.stl", light=True),
-        dict(key="fring", name="Fan ring, with intake struts", qty=1, g=vol(fring) * PLA, tall=Z_GAP1 - Z_J1 + LAP, file="fan_ring.stl", light=False),
-        dict(key="tail", name="Tail duct", qty=1, g=vol(tail) * PLA, tall=Z_J1 - Z_TAIL, file="tail_duct.stl", light=False),
-        dict(key="vring", name="Vane ring, with servo mounts", qty=1, g=vol(vring) * PLA, tall=Z_TAIL + LAP - Z_EXIT, file="vane_ring.stl", light=False),
-        dict(key="leg_up", name="Leg, upper half", qty=3, g=lg(leg_up), tall=LEG["t_root_top"] * H - Z_LEGCUT, file="leg_upper.stl", light=True),
-        dict(key="leg_lo", name="Leg, lower half with pod", qty=3, g=lg(leg_lo), tall=Z_LEGCUT - LEG["t_pod_bot"] * H, file="leg_lower.stl", light=True),
-        dict(key="vane", name="Steering vane", qty=4, g=vol(vane) * PLA, tall=3, file="vane.stl", light=False),
-        dict(key="avio", name="Avionics plate with camera upright", qty=1, g=vol(avio) * PLA, tall=Z_EYE + 16 - Z_AV, file="avionics_plate.stl", light=False),
-        dict(key="cpl", name="Nose shoulder ring", qty=1, g=vol(cpl) * PLA, tall=22, file="nose_shoulder.stl", light=False),
-        dict(key="gps", name="GPS seat", qty=1, g=vol(gps) * PLA, tall=2, file="gps_seat.stl", light=False),
-        dict(key="foot", name="Foot pad (TPU)", qty=3, g=vol(foot) * 1.21, tall=LEG["t_pod_bot"] * H + 8, file="foot_pad.stl", light=False),
+        dict(key="nose", name="Nose, with camera ports", qty=1, g=v("nose"), tall=H - Z_J2, file="nose.stl", light=True),
+        dict(key="upper", name="Upper body (battery bay)", qty=1, g=v("upper"), tall=Z_J2 - Z_JM, file="upper_body.stl", light=True),
+        dict(key="tray", name="Battery tray and joint ring", qty=1, g=v("tray"), tall=Z_BATT - Z_JM + 12, file="battery_tray.stl", light=False),
+        dict(key="power", name="Power bay", qty=1, g=v("power"), tall=Z_JM - Z_GAP1, file="power_bay.stl", light=True),
+        dict(key="iring", name="Intake ring, with struts", qty=1, g=v("iring"), tall=Z_GAP1 - Z_GAP0 + LAP, file="intake_ring.stl", light=False),
+        dict(key="tail", name="Tail duct (holds the fan)", qty=1, g=v("tail"), tall=Z_GAP0 - Z_TAIL, file="tail_duct.stl", light=False),
+        dict(key="vring", name="Vane ring, with servo mounts", qty=1, g=v("vring"), tall=Z_TAIL + LAP - Z_EXIT, file="vane_ring.stl", light=False),
+        dict(key="leg_up", name="Leg, upper half", qty=3, g=lg(B["leg_up"]), tall=LEG["t_root_top"] * H - Z_LEGCUT, file="leg_upper.stl", light=True),
+        dict(key="leg_lo", name="Leg, lower half with pod", qty=3, g=lg(B["leg_lo"]), tall=Z_LEGCUT - LEG["t_pod_bot"] * H, file="leg_lower.stl", light=True),
+        dict(key="vane", name="Steering vane", qty=4, g=v("vane"), tall=3, file="vane.stl", light=False),
+        dict(key="avio", name="Avionics plate with camera upright", qty=1, g=v("avio"), tall=Z_EYE + 16 - Z_AV, file="avionics_plate.stl", light=False),
+        dict(key="cpl", name="Nose shoulder ring", qty=1, g=v("cpl"), tall=22, file="nose_shoulder.stl", light=False),
+        dict(key="gps", name="GPS seat", qty=1, g=v("gps"), tall=2, file="gps_seat.stl", light=False),
+        dict(key="foot", name="Foot pad (TPU)", qty=3, g=vol(B["foot"]) * 1.21, tall=LEG["t_pod_bot"] * H + 8, file="foot_pad.stl", light=False),
     ]
     total = sum(r["qty"] * r["g"] for r in rows)
     light = sum(r["qty"] * r["g"] for r in rows if r["light"])
@@ -572,63 +617,67 @@ def main():
 
     down = lambda wp, z: wp.translate((0, 0, -z))
     flip = lambda wp, z: wp.translate((0, 0, -z)).rotate((0, 0, 0), (1, 0, 0), 180)
-    stl(down(nose, Z_J2), "nose.stl")
-    stl(down(upper, Z_GAP1), "upper_body.stl")
-    stl(down(fring, Z_J1 - LAP), "fan_ring.stl")
-    stl(down(tail, Z_TAIL), "tail_duct.stl")
-    stl(down(vring, Z_EXIT), "vane_ring.stl")
-    for nm, r_, w_, z in (("upper_body", upper_r, upper_w, Z_GAP1), ("fan_ring", fring_r, fring_w, Z_J1 - LAP),
-                          ("tail_duct", tail_r, tail_w, Z_TAIL)):
+    stl(down(B["nose"], Z_J2), "nose.stl")
+    stl(down(B["upper"], Z_JM), "upper_body.stl")
+    stl(flip(B["tray"], Z_BATT), "battery_tray.stl")                               # cap on the bed
+    stl(down(B["power"], Z_GAP1), "power_bay.stl")
+    stl(down(B["iring"], Z_GAP0 - LAP), "intake_ring.stl")
+    stl(down(B["tail"], Z_TAIL), "tail_duct.stl")
+    stl(down(B["vring"], Z_EXIT), "vane_ring.stl")
+    for nm, r_, w_, z in (("upper_body", upper_r, upper_w, Z_JM), ("power_bay", power_r, power_w, Z_GAP1)):
         if w_ is not None:
             stl(down(r_, z), nm + "_colour1_red.stl")
             stl(down(w_, z), nm + "_colour2_white.stl")
-    stl(down(leg_up, Z_LEGCUT).translate((-R_FOOT, 0, 0)), "leg_upper.stl")          # cut face on the bed
-    stl(flip(leg_lo, Z_LEGCUT).translate((-R_FOOT, 0, 0)), "leg_lower.stl")          # cut face on the bed, foot up
-    stl(down(vane, Z_VANE).rotate((0, 0, 0), (1, 0, 0), 90), "vane.stl")
-    stl(down(avio, Z_AV), "avionics_plate.stl")
-    stl(down(cpl, Z_J2 - 10), "nose_shoulder.stl")
-    stl(down(gps, z_gps), "gps_seat.stl")
-    stl(foot.translate((-R_FOOT, 0, 0)), "foot_pad.stl")
+    stl(down(B["leg_up"], Z_LEGCUT).translate((-R_FOOT, 0, 0)), "leg_upper.stl")   # cut face on the bed
+    stl(flip(B["leg_lo"], Z_LEGCUT).translate((-R_FOOT, 0, 0)), "leg_lower.stl")   # cut face on the bed, foot up
+    stl(down(B["vane"], Z_VANE).rotate((0, 0, 0), (1, 0, 0), 90), "vane.stl")
+    stl(down(B["avio"], Z_AV), "avionics_plate.stl")
+    stl(down(B["cpl"], Z_J2 - 10), "nose_shoulder.stl")
+    stl(down(B["gps"], z_gps), "gps_seat.stl")
+    stl(B["foot"].translate((-R_FOOT, 0, 0)), "foot_pad.stl")
 
-    asm = cq.Assembly(name="checker_rocket_rev_d")
+    asm = cq.Assembly(name="project_haddock_rev_e")
+
     def add(wp, name, col):
         if wp is not None:
             asm.add(wp, name=name, color=cq.Color(*col))
-    add(nose, "nose", RED); add(upper_r, "upper_red", RED); add(upper_w, "upper_white", WHITE)
-    add(fring_r, "fan_ring_red", RED); add(fring_w, "fan_ring_white", WHITE)
-    add(tail_r, "tail_duct_red", RED); add(tail_w, "tail_duct_white", WHITE)
-    add(vring, "vane_ring", RED); add(avio, "avionics_plate", GREY); add(cpl, "nose_shoulder", GREY); add(gps, "gps_seat", GREY)
+    add(B["nose"], "nose", RED); add(upper_r, "upper_red", RED); add(upper_w, "upper_white", WHITE)
+    add(B["tray"], "battery_tray", GREY); add(power_r, "power_bay_red", RED); add(power_w, "power_bay_white", WHITE)
+    add(B["iring"], "intake_ring", RED); add(B["tail"], "tail_duct", RED); add(B["vring"], "vane_ring", RED)
+    add(B["avio"], "avionics_plate", GREY); add(B["cpl"], "nose_shoulder", GREY); add(B["gps"], "gps_seat", GREY)
     for i, az in enumerate(LEG_AZ):
-        add(rotz(leg_up, az), f"leg_upper_{i+1}", RED); add(rotz(leg_lo, az), f"leg_lower_{i+1}", RED)
-        add(rotz(foot, az), f"foot_{i+1}", DARK)
+        add(rotz(B["leg_up"], az), f"leg_upper_{i+1}", RED); add(rotz(B["leg_lo"], az), f"leg_lower_{i+1}", RED)
+        add(rotz(B["foot"], az), f"foot_{i+1}", DARK)
     for i, az in enumerate(VANE_AZ):
-        add(rotz(vane, az), f"vane_{i+1}", GREY)
-    asm.export(os.path.join(out, "step", "rocket_assembly.step"))
-    for n, wp in parts.items():
-        cq.exporters.export(wp, os.path.join(out, "step", n + ".step"))
+        add(rotz(B["vane"], az), f"vane_{i+1}", GREY)
+    asm.export(os.path.join(out, "step", "project_haddock_assembly.step"))
+    for k, n in (("nose", "nose"), ("upper", "upper_body"), ("tray", "battery_tray"), ("power", "power_bay"),
+                 ("iring", "intake_ring"), ("tail", "tail_duct"), ("vring", "vane_ring"), ("leg_up", "leg_upper"),
+                 ("leg_lo", "leg_lower"), ("vane", "vane"), ("avio", "avionics_plate"), ("cpl", "nose_shoulder"),
+                 ("gps", "gps_seat"), ("foot", "foot_pad")):
+        cq.exporters.export(B[k], os.path.join(out, "step", n + ".step"))
 
     # ---- viewer: exact meshes of every printed part (bought parts are drawn by the page from the layout)
     items = [
-        ("nose", "Nose", nose, RED, 4.0, None), ("gps", "GPS seat", gps, GREY, 4.6, None),
-        ("cpl", "Nose shoulder ring", cpl, GREY, 3.5, None), ("avio", "Avionics plate", avio, GREY, 3.2, None),
-        ("upper", "Upper body", upper_r, RED, 2.4, None), ("upper", "Upper body", upper_w, WHITE, 2.4, None),
-        ("fring", "Fan ring", fring_r, RED, 1.5, None), ("fring", "Fan ring", fring_w, WHITE, 1.5, None),
-        ("tail", "Tail duct", tail_r, RED, 0.7, None), ("tail", "Tail duct", tail_w, WHITE, 0.7, None),
-        ("vring", "Vane ring", vring, RED, 0.0, None),
+        ("nose", B["nose"], RED, 4.4, None), ("gps", B["gps"], GREY, 4.9, None),
+        ("cpl", B["cpl"], GREY, 4.0, None), ("avio", B["avio"], GREY, 3.7, None),
+        ("upper", upper_r, RED, 3.0, None), ("upper", upper_w, WHITE, 3.0, None),
+        ("tray", B["tray"], GREY, 2.6, None),
+        ("power", power_r, RED, 1.9, None), ("power", power_w, WHITE, 1.9, None),
+        ("iring", B["iring"], RED, 1.4, None), ("tail", B["tail"], RED, 0.6, None), ("vring", B["vring"], RED, 0.0, None),
     ]
     for az in LEG_AZ:
-        items += [("leg_up", "Leg, upper half", rotz(leg_up, az), RED, 0.7, az),
-                  ("leg_lo", "Leg, lower half", rotz(leg_lo, az), RED, 0.0, az),
-                  ("foot", "Foot pad", rotz(foot, az), DARK, -0.25, az)]
+        items += [("leg_up", rotz(B["leg_up"], az), RED, 0.6, az), ("leg_lo", rotz(B["leg_lo"], az), RED, 0.0, az),
+                  ("foot", rotz(B["foot"], az), DARK, -0.25, az)]
     for az in VANE_AZ:
-        items.append(("vane", "Steering vane", rotz(vane, az), GREY, -0.5, None))
+        items.append(("vane", rotz(B["vane"], az), GREY, -0.5, None))
     blob, man = bytearray(), []
-    for key, label, wp, col, lvl, az in items:
+    for key, wp, col, lvl, az in items:
         if wp is None:
             continue
-        v, t = mesh_of(wp)
-        man.append(dict(key=key, label=label, color=list(col), level=lvl, az=az, voff=len(blob), vn=int(len(v))))
-        blob += v.tobytes()
+        vv, t = mesh_of(wp)
+        man.append(dict(key=key, color=list(col), level=lvl, az=az, voff=len(blob), vn=int(len(vv))))
+        blob += vv.tobytes()
         man[-1].update(toff=len(blob), tn=int(len(t)))
         blob += t.tobytes()
 
@@ -636,18 +685,13 @@ def main():
     exit_r = ro(Z_EXIT) - WD
     intake = (2 * math.pi * ro(Z_GAP0 + GAP / 2) - len(STRUT_AZ) * 6.0) * GAP
     meta = dict(
+        name="Project Haddock", rev="E",
         H=H, D=2 * R, stance=P["STANCE"], ratio=round(H / (2 * R), 2), fsa=round(fsa),
-        exit_area=round(math.pi * exit_r ** 2), exit_pct=round(100 * math.pi * exit_r ** 2 / fsa),
-        intake_pct=round(100 * intake / fsa), printed=round(total), printed_light=round(light),
+        exit_pct=round(100 * math.pi * exit_r ** 2 / fsa), intake_pct=round(100 * intake / fsa),
+        duct_len=round(Z_SEAT - Z_EXIT), printed=round(total), printed_light=round(light),
         layout=component_layout(),
         rows=[dict(key=r["key"], name=r["name"], qty=r["qty"], g=round(r["g"], 1), tall=round(r["tall"]),
                    file=r["file"], light=r["light"]) for r in rows],
-        stations=[[round(H), "Nose tip"], [round(z_gps), "GPS seat"], [round(Z_EYE), "Camera ports, facing forward"],
-                  [round(Z_J2), "Nose joint and checker top"], [round(Z_AV), "Avionics plate"],
-                  [round(Z_GAP1), "Battery bay floor"], [round(Z_GAP0), "Intake ring gap, %d mm tall" % GAP],
-                  [round(Z_SEAT), "Fan seat"], [round(Z_J1), "Fan ring joint"], [round(Z_CHK0), "Checker bottom, fins start"],
-                  [round(Z_TAIL), "Vane ring joint"], [round(Z_VANE), "Vane pivots and servos"],
-                  [round(Z_EXIT), "Nozzle exit"], [0, "Ground"]],
     )
     with open(os.path.join(out, "viewer", "meshes.bin"), "wb") as f:
         f.write(blob)
@@ -655,14 +699,15 @@ def main():
         json.dump(dict(parts=man, meta=meta), f)
 
     print(f"\nH={H:.0f}  D={2*R:.0f}  H/D={H/(2*R):.2f}  stance={P['STANCE']:.0f}")
-    print(f"fan seat z={Z_SEAT:.1f}, intake gap {Z_GAP0:.1f}-{Z_GAP1:.1f}, vane pivot z={Z_VANE:.1f}, exit z={Z_EXIT:.0f}")
-    print(f"intake {meta['intake_pct']} % of fan swept area, nozzle {meta['exit_pct']} %")
+    print(f"fan {Z_SEAT:.1f}-{Z_FTOP:.1f}, intake gap {Z_GAP0:.1f}-{Z_GAP1:.1f}, power bay to {Z_JM:.1f}, "
+          f"battery from {Z_BATT:.1f}, vane pivot {Z_VANE:.1f}, exit {Z_EXIT:.0f}")
+    print(f"intake {meta['intake_pct']} % of fan swept area, nozzle {meta['exit_pct']} %, duct below fan {meta['duct_len']} mm, "
+          f"body at fan {2*ro(Z_SEAT+40):.1f} mm")
     print(f"{'part':38s} qty  g each  print height")
     for r in rows:
         print(f"{r['name']:38s} {r['qty']:3d} {r['g']:7.1f} {r['tall']:8.0f}")
     print(f"{'printed total (PLA)':38s}     {total:7.1f}   (of which skins/legs that could be LW-PLA: {light:.0f})")
     print("viewer blob %.2f MB, %d triangles" % (len(blob) / 1e6, sum(m['tn'] for m in man)))
-    return parts
 
 
 if __name__ == "__main__":
